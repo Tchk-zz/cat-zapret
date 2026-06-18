@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Build artifacts
+build/
+dist/
+Output/
+*.spec.bak
+*.log
+
+# Local/runtime config
+config.json
+data/
+crash.log
+*.pid
+
+# Embedded zapret bundle is downloaded during build.
+# Do not commit Flowseal/zapret binaries or generated strategy bundles.
+vendor/zapret/*
+!vendor/zapret/README.txt
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
