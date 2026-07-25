@@ -18,31 +18,8 @@ from PyQt6.QtWidgets import (
 )
 
 from app import tg_proxy
-from .i18n import (  # noqa: E402
-    _TRANSLATIONS,
-    _TRANSLATIONS_REVERSE,
-    localize_runtime_text,
-    tr_text,
-)
 from .widgets_custom import (  # noqa: E402
-    POPUP_DARK_QSS,
-    POPUP_LIGHT_QSS,
-    POPUP_QSS,
-    AnimatedGradientProgressBar,
-    AutoSelectProgressPopup,
-    BypassTestPopup,
-    GamesColumnIcon,
-    PowerButton,
     StyledPopup,
-    _Dark3DButton,
-    _Dark3DPanel,
-    _DarkAnimatedProgressBar,
-    _GlassNav,
-    _HomeAutoSelectPanel,
-    _paint_dark_3d_surface,
-    _SettingsRow,
-    _ShimmerPlate,
-    _SleepZWidget,
 )
 
 

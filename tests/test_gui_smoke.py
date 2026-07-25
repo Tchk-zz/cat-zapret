@@ -218,14 +218,17 @@ def test_theme_persists_after_window_rebuild(main_window, isolated_env):
 
 def test_tg_dc_ip_field_round_trips_to_runner(main_window):
     """Editing the DC IP field on the TG tab must update both the config
-    and the runner, so the next proxy start uses the new IPs (audit Rec #5).
+    and the runner, so the next proxy start uses the new IPs.
+
+    Note on the default: the field is intentionally left EMPTY on a fresh
+    profile. Since tg-ws-proxy v1.8+ an empty value means "auto" — the engine
+    maps all known DCs itself, which is the recommended mode. Pre-filling the
+    field would silently pin the user to a single hard-coded DC IP.
     """
-    # The TG tab must have a tg_dc_edit field (added in Rec #5).
     assert hasattr(main_window, "tg_dc_edit"), "TG DC IP edit field missing"
-    # Default: the field shows the Flowseal defaults.
-    from app import tg_proxy
-    default_text = ", ".join(tg_proxy._default_dc_ips())
-    assert main_window.tg_dc_edit.text() == default_text
+    # Default on a clean profile: empty field, no overrides anywhere.
+    assert main_window.tg_dc_edit.text() == ""
+    assert main_window.config.tg_proxy_dc_ips == []
     # Simulate the user typing a custom value.
     main_window.tg_dc_edit.setText("3:149.154.175.100, 5:91.105.192.100")
     main_window._on_tg_dc_ips_edited()
@@ -237,6 +240,11 @@ def test_tg_dc_ip_field_round_trips_to_runner(main_window):
     assert main_window.tg_runner.get_dc_ips() == [
         "3:149.154.175.100", "5:91.105.192.100"
     ]
+    # Clearing the field must drop the overrides again (back to "auto").
+    main_window.tg_dc_edit.setText("")
+    main_window._on_tg_dc_ips_edited()
+    assert main_window.config.tg_proxy_dc_ips == []
+    assert main_window.tg_runner.get_dc_ips() == []
 
 
 def test_engine_args_filter_without_roblox_is_passthrough(main_window):

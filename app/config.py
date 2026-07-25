@@ -70,6 +70,11 @@ class AppConfig:
     deep_attempts: int = 3
     # Seconds without data mid-stream that counts as a freeze.
     stall_timeout: float = 4.0
+    # Hard cap on how many survivors reach the slow deep stage of "best" mode.
+    # Each deep check costs about deep_freeze_seconds * deep_attempts, so an
+    # unbounded list is what made the sweep run for half an hour on some PCs.
+    # 0 disables the cap.
+    max_deep_candidates: int = 8
     # Check Discord voice (signaling + UDP/STUN) as part of the score.
     enable_voice_check: bool = True
     # Ordered list of strategy names tried first during auto-select.

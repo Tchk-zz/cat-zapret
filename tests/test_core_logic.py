@@ -337,7 +337,6 @@ class CoreLogicTests(unittest.TestCase):
     def test_tg_bad_handshake_logger_is_throttled(self):
         """Wrong-secret handshakes should not spam warning logs per local port."""
         from app.tg_proxy_engine import tg_ws_proxy
-        import logging
 
         old_last = tg_ws_proxy._last_bad_handshake_log
         old_suppressed = tg_ws_proxy._bad_handshake_suppressed
@@ -441,40 +440,6 @@ class CoreLogicTests(unittest.TestCase):
             self.assertIsNone(tg_proxy.update_available(Path(".")))
         finally:
             tg_proxy.latest_release = orig
-
-
-    def test_tg_proxy_cf_domain_overrides_are_normalized(self):
-        from app import tg_proxy
-        self.assertEqual(
-            tg_proxy._resolve_domains(["Example.COM, worker.example.com", "https://bad.example/x", "example.com"]),
-            ["example.com", "worker.example.com"],
-        )
-        with tempfile.TemporaryDirectory() as td:
-            r = tg_proxy.TGProxyRunner(
-                Path(td),
-                cfproxy_domains=["One.EXAMPLE, two.example"],
-                cfworker_domains=["worker.example"],
-            )
-            self.assertEqual(r.get_cf_domains(), (["one.example", "two.example"], ["worker.example"]))
-
-    def test_tg_proxy_wrapper_disables_forced_ws_keepalive(self):
-        """Our wrapper must not re-enable old WS keepalive behavior that
-        upstream v1.8.0 rolled back due reports of problems."""
-        import asyncio
-        from app import tg_proxy
-        with tempfile.TemporaryDirectory() as td:
-            r = tg_proxy.TGProxyRunner(Path(td))
-            async def fake_run(stop_event):
-                return None
-            from app.tg_proxy_engine.config import proxy_config
-            old = proxy_config.ws_keepalive_interval
-            try:
-                proxy_config.ws_keepalive_interval = 30.0
-                r._cfg = tg_proxy._ensure_config(Path(td))
-                asyncio.run(r._run_async(asyncio.Event()))
-                self.assertEqual(proxy_config.ws_keepalive_interval, 0.0)
-            finally:
-                proxy_config.ws_keepalive_interval = old
 
 
     def test_tg_proxy_cf_domain_overrides_are_normalized(self):

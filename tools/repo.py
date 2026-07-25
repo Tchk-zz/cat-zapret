@@ -125,7 +125,6 @@ def cmd_log(count: int = 15) -> int:
 
 
 def cmd_status() -> int:
-    repo = _repo()
     st = porcelain.status(repo=str(ROOT))
     staged = st.staged
     changed = [p.decode("utf-8", "replace") for p in st.unstaged]

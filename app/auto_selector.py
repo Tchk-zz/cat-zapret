@@ -15,7 +15,6 @@ Runs on a worker thread (see ui.workers) so the UI stays responsive.
 from __future__ import annotations
 
 import threading
-import time
 from dataclasses import dataclass
 from typing import Callable, List, Optional
 

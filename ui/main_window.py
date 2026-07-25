@@ -60,8 +60,6 @@ from .workers import (
 # Translation tables live in ui/i18n.py; re-exported here because the
 # window and the tests import these names from this module.
 from .i18n import (  # noqa: E402
-    _TRANSLATIONS,
-    _TRANSLATIONS_REVERSE,
     localize_runtime_text,
     tr_text,
 )
@@ -104,24 +102,11 @@ _smooth_code_font = smooth_code_font
 
 # Painted widgets and popups live in ui/widgets_custom.py.
 from .widgets_custom import (  # noqa: E402
-    POPUP_DARK_QSS,
-    POPUP_LIGHT_QSS,
-    POPUP_QSS,
-    AnimatedGradientProgressBar,
     AutoSelectProgressPopup,
     BypassTestPopup,
     GamesColumnIcon,
-    PowerButton,
     StyledPopup,
-    _Dark3DButton,
-    _Dark3DPanel,
-    _DarkAnimatedProgressBar,
     _GlassNav,
-    _HomeAutoSelectPanel,
-    _paint_dark_3d_surface,
-    _SettingsRow,
-    _ShimmerPlate,
-    _SleepZWidget,
 )
 
 
@@ -1118,6 +1103,7 @@ class MainWindow(
             attempts=self.config.deep_attempts,
             enable_voice=self.config.enable_voice_check,
             stall_timeout=self.config.stall_timeout,
+            max_deep_candidates=self.config.max_deep_candidates,
         )
         # Hints so the sweep starts with the strategy that already worked on
         # this machine, followed by the user's preferred order. Cuts a full
@@ -1308,7 +1294,6 @@ class MainWindow(
         self.progress.setRange(0, 0)  # indeterminate
         self.progress_label.setText(self._t("Обновление zapret..."))
         self._set_busy(True)
-        from .workers import UpdateApplyWorker
         worker = UpdateApplyWorker(self.zapret_dir, release)
         self._update_thread = QThread(self)
         self._update_worker = worker
