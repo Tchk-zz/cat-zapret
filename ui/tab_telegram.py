@@ -69,7 +69,7 @@ class TelegramTabMixin:
         lay.addWidget(title)
 
         sub = QLabel(
-            "Лок��льный MTProto-прокси для Telegram Desktop. Telegram подключается к нему, "
+            "Локальный MTProto-прокси для Telegram Desktop. Telegram подключается к нему, "
             "а прокси туннелирует трафик через WebSocket к серверам Telegram — обход блокировок "
             "без сторонних серверов."
         )
@@ -148,7 +148,7 @@ class TelegramTabMixin:
         link_block = QVBoxLayout(link_block_widget)
         link_block.setContentsMargins(0, 14, 0, 0)
         link_block.setSpacing(4)
-        lbl_link = QLabel(self._t("Ссылка для ��одклю��ения"))
+        lbl_link = QLabel(self._t("Ссылка для подключения"))
         lbl_link.setObjectName("tgLinkLabel")
         lbl_link.setStyleSheet(
             "QLabel#tgLinkLabel { color: rgba(255,255,255,0.65); font-size: 12px; }"
@@ -241,7 +241,7 @@ class TelegramTabMixin:
         adv_lay.addWidget(cf_title)
         cf_hint = QLabel(
             self._t(
-                "Оставьте пустым для автоматического списка Flowseal. П��ля нужны только если у вас есть "
+                "Оставьте пустым для автоматического списка Flowseal. Поля нужны только если у вас есть "
                 "свои CF Proxy / CF Worker домены. Несколько доменов — через запятую."
             )
         )
@@ -258,7 +258,7 @@ class TelegramTabMixin:
         adv_lay.addWidget(self.tg_cfproxy_edit)
         self.tg_cfworker_edit = QLineEdit()
         self.tg_cfworker_edit.setObjectName("gamesInput")
-        self.tg_cfworker_edit.setPlaceholderText("CF Worker domains (пус��о = выкл)")
+        self.tg_cfworker_edit.setPlaceholderText("CF Worker domains (пусто = выкл)")
         cur_worker = list(getattr(self.config, "tg_proxy_cfworker_domains", []) or [])
         if cur_worker:
             self.tg_cfworker_edit.setText(", ".join(cur_worker))
@@ -488,7 +488,7 @@ class TelegramTabMixin:
         if not self.tg_runner.is_running():
             StyledPopup(
                 "Telegram",
-                "Прокси не удалось пе����езапустить — возможно, порт 1443 всё ещё "
+                "Прокси не удалось перезапустить — возможно, порт 1443 всё ещё "
                 "занят. Подождите 10–20 секунд и попробуйте снова кнопкой "
                 "«Запустить прокси».",
                 self,

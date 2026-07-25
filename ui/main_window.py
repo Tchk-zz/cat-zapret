@@ -42,10 +42,13 @@ from .theme import (
 )
 from .tray import Tray
 from .workers import (
+    AppSelfUpdateDownloadWorker,
+    AppSelfUpdateWorker,
     AutoSelectWorker,
     BootstrapWorker,
     CheckWorker,
     ListUpdateWorker,
+    UpdateApplyWorker,
     UpdateCheckWorker,
 )
 
@@ -209,7 +212,7 @@ class MainWindow(
         _bg_layout.setSpacing(12)
         self._top_nav = _GlassNav([
             "Главная",
-            "На��тройки",
+            "Настройки",
             "Стратегия",
             "Игры и сервисы",
             "Telegram",
@@ -268,6 +271,9 @@ class MainWindow(
             # Runs slightly after the zapret check so they don't collide on
             # the GitHub API rate limit.
             QTimer.singleShot(5000, self._tg_check_updates_async)
+            # Check our own GitHub for a new Zapret GUI installer (silent
+            # on launch -- only shows a dialog if a newer version exists).
+            QTimer.singleShot(7000, self._check_app_update_silent)
         if start_minimized:
             QTimer.singleShot(0, self.hide)
 
@@ -539,7 +545,7 @@ class MainWindow(
         else:
             self.progress_label.setText(self._msg_text("Не удалось подготовить zapret") + ": " + self._localize_runtime(result))
             StyledPopup(
-                "Не удалось подг��товить zapret",
+                "Не удалось подготовить zapret",
                 "Проверьте интернет-соединение и попробуйте снова.\n\n" + result,
                 self,
                 error_style=True,
@@ -660,22 +666,22 @@ class MainWindow(
         if hasattr(self, "games_filter_cb"):
             self.games_filter_cb.setText(self._t("Применять обход к игровому трафику (порты 1024-65535)"))
         if hasattr(self, "games_filter_warn"):
-            self.games_filter_warn.setText(self._t("Применяет DPI-обход к игровому UDP/TCP на высоких портах. Иногда помогает (если сервис режется по DPI), но ЧАЩЕ ломает игры — в РФ они ��бычно не блокируются по DPI. Включай для теста; стало хуже — выключи."))
+            self.games_filter_warn.setText(self._t("Применяет DPI-обход к игровому UDP/TCP на высоких портах. Иногда помогает (если сервис режется по DPI), но ЧАЩЕ ломает игры — в РФ они обычно не блокируются по DPI. Включай для теста; стало хуже — выключи."))
         # Telegram tab dynamic text.
         if hasattr(self, "tg_title"):
             self.tg_title.setText(self._t("Telegram прокси"))
         if hasattr(self, "tg_subtitle"):
             self.tg_subtitle.setText(self._t(
                 "Локальный MTProto-прокси для Telegram Desktop. Telegram подключается к нему, "
-                "а прокси туннелирует трафик через WebSocket к серверам Telegram — обход бло��ировок "
+                "а прокси туннелирует трафик через WebSocket к серверам Telegram — обход блокировок "
                 "без сторонних серверов."
             ))
         if hasattr(self, "cb_tg_autostart"):
-            self.cb_tg_autostart.setText(self._t("Запускать в��есте с zapret"))
+            self.cb_tg_autostart.setText(self._t("Запускать вместе с zapret"))
         if hasattr(self, "btn_tg_copy"):
-            self.btn_tg_copy.setText(self._t("��копиров��ть ссылку"))
+            self.btn_tg_copy.setText(self._t("Скопировать ссылку"))
         if hasattr(self, "btn_tg_open"):
-            self.btn_tg_open.setText(self._t("��ткрыть в Telegram"))
+            self.btn_tg_open.setText(self._t("Открыть в Telegram"))
         if hasattr(self, "btn_tg_rotate"):
             self.btn_tg_rotate.setText(self._t("Сгенерировать новый secret"))
         if hasattr(self, "btn_tg_update"):
@@ -684,7 +690,7 @@ class MainWindow(
             tab_titles = ["Главная", "Настройки", "Стратегия", "Игры и сервисы", "Telegram"]
             for i, txt in enumerate(tab_titles):
                 label = self._t(txt)
-                if self.lang == "en" and txt == "Игры и серви��ы":
+                if self.lang == "en" and txt == "Игры и сервисы":
                     label = "Games && Services"
                 self.tabs.setTabText(i, label)
         except Exception:
@@ -917,7 +923,7 @@ class MainWindow(
         strat = self._current_strategy()
         if strat is None:
             StyledPopup(
-                "Ошибк�� запуска",
+                "Ошибка запуска",
                 "Нет выбранной стратегии.",
                 self,
                 error_style=True,
@@ -1215,12 +1221,12 @@ class MainWindow(
                     f"Частично рабочая: {result.strategy.name} ({result.detail})"
                 ))
                 StyledPopup(
-                    "Стратегия найд��на",
+                    "Стратегия найдена",
                     f"Полностью рабочая стратегия не найдена.\nВключена наиболее подходящая: {result.strategy.name}\n({result.detail}){lat}",
                     self,
                 ).exec()
             else:
-                kind = ("Best" if result.mode == "best" else "Working") if self.lang == "en" else ("Лучшая" if result.mode == "best" else "Рабо��ая")
+                kind = ("Best" if result.mode == "best" else "Working") if self.lang == "en" else ("Лучшая" if result.mode == "best" else "Рабочая")
                 self.progress_label.setText(self._localize_runtime(
                     f"{kind} стратегия: {result.strategy.name} ({result.detail}){lat}"
                 ))
@@ -1233,7 +1239,7 @@ class MainWindow(
             self.progress_label.setText(self._t("Рабочая стратегия не найдена."))
             StyledPopup(
                 "Стратегия не найдена",
-                "Ни одн�� стратегия не разблокировала доступ.\nПопробуйте обновить списки доменов и убедитесь, что приложение запущено от имени администратора.",
+                "Ни одна стратегия не разблокировала доступ.\nПопробуйте обновить списки доменов и убедитесь, что приложение запущено от имени администратора.",
                 self,
             ).exec()
         self._refresh_status()
@@ -1300,7 +1306,7 @@ class MainWindow(
             self._update_restart_service = False
         self.progress.setVisible(True)
         self.progress.setRange(0, 0)  # indeterminate
-        self.progress_label.setText(self._t("Обнов��ение zapret..."))
+        self.progress_label.setText(self._t("Обновление zapret..."))
         self._set_busy(True)
         from .workers import UpdateApplyWorker
         worker = UpdateApplyWorker(self.zapret_dir, release)
@@ -1321,7 +1327,7 @@ class MainWindow(
         self.progress.setRange(0, 100)
         self.progress.setVisible(False)
         self._set_busy(False)
-        self._log("[о��новление] " + msg)
+        self._log("[обновление] " + msg)
         self.reload_strategies()
         # Restart the previously running strategy only after a clearly
         # successful update. Error messages intentionally start with "Ошибка" /
@@ -1332,9 +1338,9 @@ class MainWindow(
                 fresh = self.manager.get(restart.key) or restart
                 self.runner.start(fresh)
                 self._refresh_status()
-                self._log("[обн��вление] zapret перезапущен после обновления")
+                self._log("[обновление] zapret перезапущен после обновления")
             except Exception as exc:  # noqa: BLE001
-                self._log("[обновлени��] ����е удалось перезапу��тить zapret: " + str(exc))
+                self._log("[обновление] не удалось перезапустить zapret: " + str(exc))
         if getattr(self, "_update_restart_service", False) and msg.startswith("Обновлено до"):
             try:
                 svc_msg = self.service.start()
@@ -1352,6 +1358,122 @@ class MainWindow(
             QMessageBox.warning(self, self._msg_title("Обновление"), self._msg_text(msg))
         else:
             QMessageBox.information(self, self._msg_title("Обновление"), self._msg_text(msg))
+
+    # --------------------------------------------------- app self-update
+    def _check_app_update_silent(self) -> None:
+        """Called automatically on launch -- does not pop up if already up to date."""
+        self.check_app_update_async(silent=True)
+
+    def check_app_update_async(self, silent: bool = False) -> None:
+        """Check GitHub for a newer Zapret GUI installer (non-blocking).
+
+        If *silent* is True, nothing is shown when already up to date
+        (used for the auto-check on launch).
+        """
+        if getattr(self, "_app_update_thread", None) is not None:
+            return
+        worker = AppSelfUpdateWorker()
+        thread = QThread(self)
+        self._app_update_thread = thread
+        self._app_update_worker = worker
+        self._app_update_silent = silent
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_app_update_checked)
+        thread.start()
+
+    def _on_app_update_checked(self, release) -> None:
+        if self._app_update_thread is not None:
+            self._app_update_thread.quit()
+            self._app_update_thread.wait()
+            self._app_update_thread = None
+
+        silent = getattr(self, "_app_update_silent", False)
+
+        if release is None:
+            # No newer version found
+            if not silent:
+                from app.self_updater import local_version
+                cur = local_version() or "?"
+                QMessageBox.information(
+                    self,
+                    self._msg_title("Обновление приложения"),
+                    self._msg_text(
+                        f"\u0423 \u0432\u0430\u0441 \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d\u0430 \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u044f\u044f \u0432\u0435\u0440\u0441\u0438\u044f Zapret GUI \u2014 {cur}.\n\n"
+                        "\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435 \u043d\u0435 \u0442\u0440\u0435\u0431\u0443\u0435\u0442\u0441\u044f."
+                    ),
+                )
+            return
+
+        # Newer version available
+        from app.self_updater import local_version
+        cur = local_version() or "?"
+        ans = QMessageBox.question(
+            self,
+            self._msg_title("\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435 \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u044f"),
+            self._msg_text(
+                f"\u0414\u043e\u0441\u0442\u0443\u043f\u043d\u0430 \u043d\u043e\u0432\u0430\u044f \u0432\u0435\u0440\u0441\u0438\u044f Zapret GUI: {release.tag}\n"
+                f"\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d\u043d\u0430\u044f: {cur}\n\n"
+                "\u0421\u043a\u0430\u0447\u0430\u0442\u044c \u0438 \u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u0449\u0438\u043a?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if ans == QMessageBox.StandardButton.Yes:
+            self._app_download_and_launch(release)
+
+    def _app_download_and_launch(self, release) -> None:
+        """Download the installer in a worker thread and launch it."""
+        if getattr(self, "_app_update_thread", None) is not None:
+            return
+        worker = AppSelfUpdateDownloadWorker(release)
+        thread = QThread(self)
+        self._app_update_thread = thread
+        self._app_update_worker = worker
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(self._append_log)
+        worker.percent.connect(self._on_app_download_percent)
+        worker.finished.connect(self._on_app_download_finished)
+        self.progress.setVisible(True)
+        # Real 0-100 progress: the worker reports actual bytes downloaded
+        # instead of an indeterminate bar that told the user nothing.
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress_label.setText("\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430 \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f...")
+        thread.start()
+
+    def _on_app_download_percent(self, pct: int) -> None:
+        """Update the progress bar and caption as the installer downloads."""
+        self.progress.setValue(pct)
+        self.progress_label.setText(
+            "\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430 \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f... {}%".format(pct)
+        )
+
+    def _on_app_download_finished(self, msg: str) -> None:
+        if self._app_update_thread is not None:
+            self._app_update_thread.quit()
+            self._app_update_thread.wait()
+            self._app_update_thread = None
+        self.progress.setRange(0, 100)
+        self.progress.setVisible(False)
+        if msg == "cancelled":
+            # The user closed the app mid-download; no dialog to show.
+            return
+        if msg == "ok":
+            QMessageBox.information(
+                self,
+                self._msg_title("\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435 \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u044f"),
+                self._msg_text(
+                    "\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u0449\u0438\u043a \u0437\u0430\u043f\u0443\u0449\u0435\u043d. \u041f\u0440\u043e\u0439\u0434\u0438\u0442\u0435 \u0448\u0430\u0433\u0438 \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0438 \u0432 \u043e\u0442\u043a\u0440\u044b\u0432\u0448\u0435\u043c\u0441\u044f \u043e\u043a\u043d\u0435.\n\n"
+                    "\u041f\u043e\u0441\u043b\u0435 \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0438 \u043f\u0435\u0440\u0435\u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u0435 \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435."
+                ),
+            )
+        else:
+            QMessageBox.warning(
+                self,
+                self._msg_title("\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435 \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u044f"),
+                self._msg_text(msg),
+            )
 
     # ------------------------------------------------------------- editor
     def _validate_custom(self) -> None:
@@ -1548,7 +1670,7 @@ class MainWindow(
         lay = QVBoxLayout(dlg)
         hosts_current = list_manager.hosts_block_is_current(block)
         info_text = (
-            "HOSTS уже содержит а��туальный блок ZapretGUI. Повторное применение не нужно."
+            "HOSTS уже содержит актуальный блок ZapretGUI. Повторное применение не нужно."
             if hosts_current else
             "Скопируйте эти строки в Windows HOSTS или нажмите «Применить». "
             "Автоматическое применение создаёт backup и заменяет только блок ZapretGUI."
@@ -2006,6 +2128,15 @@ class MainWindow(
                 self._auto_worker.cancel()
             except Exception:
                 pass
+        # Self-update download worker: a ~55 MB download would otherwise keep
+        # the thread alive past quit and blow the wait() timeout below.
+        # The plain update *check* worker has no cancel(), hence the try.
+        app_update_worker = getattr(self, "_app_update_worker", None)
+        if app_update_worker is not None:
+            try:
+                app_update_worker.cancel()
+            except Exception:
+                pass
         # Update worker: best-effort; it only calls the network so a quick
         # quit/wait is enough. Includes the TG proxy update thread.
         for attr in (
@@ -2014,6 +2145,7 @@ class MainWindow(
             "_check_thread",
             "_bootstrap_thread",
             "_tg_update_thread",
+            "_app_update_thread",
         ):
             thread = getattr(self, attr, None)
             if thread is None:
@@ -2029,6 +2161,7 @@ class MainWindow(
         self._update_worker = None
         self._check_worker = None
         self._bootstrap_worker = None
+        self._app_update_worker = None
 
     def closeEvent(self, event) -> None:  # noqa: N802
         if self._force_quit:

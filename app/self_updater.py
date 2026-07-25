@@ -1,0 +1,327 @@
+"""Self-update checker for Zapret GUI.
+
+Checks our own GitHub releases page (Tchk-zz/cat-zapret) for a newer
+installer and downloads + launches it so the user gets a seamless update
+without having to find the releases page manually.
+
+Flow:
+  1. Fetch latest release tag from GitHub API.
+  2. Compare against local VERSION file.
+  3. If newer -> return AppRelease info to the caller (UI decides what to do).
+  4. On user confirm -> download installer to a temp dir, verify its SHA-256
+     against the digest published by GitHub, then launch it detached.
+     The Inno Setup installer handles file replacement; we just start the wizard.
+"""
+from __future__ import annotations
+
+import hashlib
+import os
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Optional
+
+try:
+    import requests as _requests
+except ImportError:  # pragma: no cover
+    _requests = None  # type: ignore
+
+OWN_REPO = "Tchk-zz/cat-zapret"
+RELEASES_API = "https://api.github.com/repos/" + OWN_REPO + "/releases/latest"
+INSTALLER_ASSET = "ZapretGUI-Setup.exe"
+
+# Prefix for the downloaded installer in %TEMP%. Kept in a constant because
+# _purge_stale_installers() uses it to find leftovers from previous runs.
+_TMP_PREFIX = "ZapretGUI-Setup-"
+
+# Versions are compared as fixed-width tuples so that "1.8" and "1.8.0" are
+# treated as the same version (see _norm).
+_VERSION_PARTS = 3
+
+
+@dataclass
+class AppRelease:
+    tag: str           # e.g. "v1.8.0"
+    version: str       # e.g. "1.8.0" (tag without leading v)
+    download_url: str
+    size: int          # bytes
+    sha256: str = ""   # lowercase hex digest published by GitHub, "" if absent
+
+
+# ---------------------------------------------------------------------------
+# Version helpers
+# ---------------------------------------------------------------------------
+
+def _norm(ver: str) -> tuple:
+    """Convert "v1.8.0" or "1.8.0" -> (1, 8, 0) for comparison.
+
+    Short versions are zero-padded to _VERSION_PARTS components. Without the
+    padding Python compares tuples of different length lexicographically, so
+    (1, 8) < (1, 8, 0) would be True and the app would report a bogus update
+    whenever the tag was written as "v1.8" and VERSION as "1.8.0".
+    Extra components are preserved, so "1.8.0.1" still sorts above "1.8.0".
+    """
+    clean = ver.lstrip("vV").strip()
+    parts: list[int] = []
+    for p in clean.split("."):
+        try:
+            parts.append(int(p))
+        except ValueError:
+            parts.append(0)
+    while len(parts) < _VERSION_PARTS:
+        parts.append(0)
+    return tuple(parts)
+
+
+def local_version() -> str:
+    """Read the VERSION file bundled with the running app.
+
+    NOTE: installer.iss MUST ship VERSION next to the exe. If it is missing,
+    this returns "" and update_available() can never conclude "up to date",
+    so the user would be nagged about the same release forever.
+    """
+    if getattr(sys, "frozen", False):
+        # Frozen exe: VERSION is next to the executable.
+        base = Path(sys.executable).resolve().parent
+    else:
+        # Dev mode: VERSION is at the project root (two levels up from app/).
+        base = Path(__file__).resolve().parent.parent
+    try:
+        return (base / "VERSION").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# GitHub API
+# ---------------------------------------------------------------------------
+
+def _parse_digest(asset: dict) -> str:
+    """Extract the lowercase sha256 hex digest from a GitHub asset entry.
+
+    GitHub publishes it as ``"digest": "sha256:<hex>"``. Older API responses
+    (and GitHub Enterprise) may not have the field at all, in which case we
+    return "" and the download is accepted without hash verification.
+    """
+    digest = str(asset.get("digest") or "").strip()
+    prefix = "sha256:"
+    if digest.lower().startswith(prefix):
+        return digest[len(prefix):].strip().lower()
+    return ""
+
+
+def latest_release(timeout: float = 10.0) -> Optional[AppRelease]:
+    """Fetch the latest GitHub release of Zapret GUI.
+
+    Returns None if the network is unavailable or the response is malformed.
+    """
+    if _requests is None:
+        return None
+    try:
+        resp = _requests.get(
+            RELEASES_API,
+            timeout=timeout,
+            headers={"Accept": "application/vnd.github+json"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return None
+
+    tag = data.get("tag_name", "")
+    if not tag:
+        return None
+
+    for asset in data.get("assets", []):
+        if asset.get("name") == INSTALLER_ASSET:
+            return AppRelease(
+                tag=tag,
+                version=tag.lstrip("vV"),
+                download_url=asset["browser_download_url"],
+                size=asset.get("size", 0),
+                sha256=_parse_digest(asset),
+            )
+    return None
+
+
+def update_available() -> Optional[AppRelease]:
+    """Return the latest release if it is newer than the installed version.
+
+    Returns None if we are already up to date or the check fails.
+    """
+    cur = local_version()
+    rel = latest_release()
+    if rel is None:
+        return None
+    if cur and _norm(rel.tag) <= _norm(cur):
+        return None
+    return rel
+
+
+# ---------------------------------------------------------------------------
+# Download and launch
+# ---------------------------------------------------------------------------
+
+def _purge_stale_installers(keep: str = "") -> None:
+    """Delete installers left in %TEMP% by previous update runs.
+
+    Each update downloads a ~55 MB exe that we intentionally do not delete
+    while the installer is running. Without this cleanup those files pile up
+    in the temp folder forever. Files that are still locked (an installer is
+    running right now) simply fail to delete and are skipped.
+    """
+    try:
+        tmp_dir = Path(tempfile.gettempdir())
+        for entry in tmp_dir.glob(_TMP_PREFIX + "*.exe"):
+            if keep and str(entry) == keep:
+                continue
+            try:
+                entry.unlink()
+            except OSError:
+                # Locked by a running installer or removed concurrently.
+                pass
+    except Exception:
+        # Cleanup is best-effort and must never block an update.
+        pass
+
+
+def _discard(path: str) -> None:
+    """Remove a partially downloaded / corrupted installer, ignoring errors."""
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+def download_and_launch(
+    release: AppRelease,
+    on_status: Optional[Callable[[str], None]] = None,
+    on_progress: Optional[Callable[[int], None]] = None,
+    should_cancel: Optional[Callable[[], bool]] = None,
+) -> str:
+    """Download *release* installer to a temp file, verify it and start it.
+
+    Args:
+        release: the release to install.
+        on_status: called with human-readable status lines.
+        on_progress: called with the download completion percentage (0-100).
+            Only fires when the server reports a content length.
+        should_cancel: polled during the download; when it returns True the
+            download is aborted and the partial file is deleted.
+
+    Returns:
+        ``"ok"``       if the installer was launched successfully.
+        ``"cancelled"`` if *should_cancel* asked us to stop.
+        A string starting with ``"Ошибка"`` on failure.
+
+    The successfully launched installer file is intentionally NOT deleted --
+    Windows locks it while the installer runs. It is cleaned up on the next
+    update run by _purge_stale_installers().
+    """
+    if _requests is None:
+        return "Ошибка: библиотека requests не установлена."
+
+    def _report(msg: str) -> None:
+        if on_status:
+            on_status(msg)
+
+    def _pct(value: int) -> None:
+        if on_progress:
+            on_progress(value)
+
+    def _cancelled() -> bool:
+        return bool(should_cancel and should_cancel())
+
+    # Reclaim disk space from previous updates before pulling another ~55 MB.
+    _purge_stale_installers()
+
+    size_mb = release.size // (1024 * 1024) if release.size else "?"
+    _report(f"Загрузка установщика {release.tag} (~{size_mb} МБ)...")
+
+    try:
+        resp = _requests.get(release.download_url, timeout=300, stream=True)
+        resp.raise_for_status()
+    except Exception as exc:
+        return "Ошибка загрузки: " + str(exc)
+
+    # Prefer the length reported by the CDN; fall back to the API-reported size.
+    try:
+        total = int(resp.headers.get("Content-Length") or 0)
+    except (TypeError, ValueError):
+        total = 0
+    if total <= 0:
+        total = release.size or 0
+
+    tmp_path = ""
+    digest = hashlib.sha256()
+    downloaded = 0
+    last_pct = -1
+    try:
+        tmp = tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=".exe",
+            prefix=_TMP_PREFIX,
+        )
+        tmp_path = tmp.name
+        with tmp:
+            for chunk in resp.iter_content(chunk_size=65536):
+                if _cancelled():
+                    _discard(tmp_path)
+                    _report("Загрузка обновления отменена.")
+                    return "cancelled"
+                if not chunk:
+                    continue
+                tmp.write(chunk)
+                digest.update(chunk)
+                downloaded += len(chunk)
+                if total > 0:
+                    pct = min(100, downloaded * 100 // total)
+                    if pct != last_pct:
+                        last_pct = pct
+                        _pct(pct)
+    except Exception as exc:
+        if tmp_path:
+            _discard(tmp_path)
+        return "Ошибка сохранения: " + str(exc)
+    finally:
+        resp.close()
+
+    # Verify the download before executing it. The installer runs elevated, so
+    # a truncated download or a tampered mirror would be executed with admin
+    # rights -- exactly the check app/updater.py already does for the zapret
+    # bundle. If GitHub did not publish a digest we can only check the size.
+    if release.sha256:
+        actual = digest.hexdigest()
+        if actual != release.sha256:
+            _discard(tmp_path)
+            return (
+                "Ошибка: контрольная сумма установщика не совпала. "
+                f"Ожидалась {release.sha256[:16]}..., получена {actual[:16]}.... "
+                "Файл удалён, установка отменена."
+            )
+        _report("Контрольная сумма SHA-256 совпала.")
+    elif release.size and downloaded != release.size:
+        _discard(tmp_path)
+        return (
+            f"Ошибка: размер установщика не совпал "
+            f"(ожидалось {release.size} Б, получено {downloaded} Б). "
+            "Файл удалён, установка отменена."
+        )
+
+    _pct(100)
+    _report(f"Загружено {downloaded // 1024 // 1024} МБ. Запускаю установщик...")
+
+    try:
+        kwargs: dict = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = (
+                subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            )
+        subprocess.Popen([tmp_path], **kwargs)
+    except Exception as exc:
+        _discard(tmp_path)
+        return "Ошибка запуска установщика: " + str(exc)
+
+    return "ok"

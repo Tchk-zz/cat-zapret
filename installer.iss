@@ -77,6 +77,11 @@ Type: files; Name: "{app}\{#MyAppExeName}"
 
 [Files]
 Source: "{#MyAppExeSource}"; DestDir: "{app}"; DestName: "{#MyAppExeName}"; Flags: ignoreversion
+; VERSION — REQUIRED next to the exe. app.self_updater.local_version() reads
+; this file to know which version is installed. Without it local_version()
+; returns "" and the self-updater offers the same update over and over again,
+; because an empty local version can never compare as up-to-date.
+Source: "VERSION"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 ; roblox_profile.json — installed next to the exe so advanced users can edit
 ; the Roblox bypass IP ranges WITHOUT rebuilding. Loaded at runtime by

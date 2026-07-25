@@ -215,10 +215,21 @@ class SettingsTabMixin:
         self.settings_updates_layout = settings_updates_layout
         card_lay.addLayout(settings_updates_layout)
 
+        # --- version label ---
+        from app.self_updater import local_version as _lv
+        _ver = _lv() or "?"
+        self.lbl_app_version = QLabel(f"Zapret GUI v{_ver}")
+        self.lbl_app_version.setObjectName("settingsVersionLabel")
+        self.lbl_app_version.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        settings_updates_layout.addWidget(self.lbl_app_version)
+
         btn_update = QPushButton("\u041e\u0431\u043d\u043e\u0432\u0438\u0442\u044c \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435")
-        btn_update.setObjectName("settingsSoftBtn")
-        # Reserved for future app patch/update flow. Intentionally clickable,
-        # but currently has no action attached.
+        btn_update.setObjectName("settingsPrimaryBtn")
+        btn_update.setToolTip(
+            "\u041f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c GitHub \u043d\u0430 \u043d\u0430\u043b\u0438\u0447\u0438\u0435 \u043d\u043e\u0432\u043e\u0439 \u0432\u0435\u0440\u0441\u0438\u0438 Zapret GUI "
+            "\u0438 \u0441\u043a\u0430\u0447\u0430\u0442\u044c \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u0449\u0438\u043a."
+        )
+        btn_update.clicked.connect(self.check_app_update_async)
         settings_updates_layout.addWidget(btn_update)
         btn_force_update = QPushButton("\u041e\u0431\u043d\u043e\u0432\u0438\u0442\u044c zapret")
         btn_force_update.setObjectName("settingsPrimaryBtn")

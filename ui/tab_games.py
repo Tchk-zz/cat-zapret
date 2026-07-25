@@ -100,7 +100,7 @@ class GamesTabMixin:
         card_lay.addLayout(columns, 0)
 
         note = QLabel(
-            "Изменения сохраняются сразу. Если zapret включён — он перезапустится ����втоматически."
+            "Изменения сохраняются сразу. Если zapret включён — он перезапустится автоматически."
         )
         self.games_note = note
         note.setObjectName("gamesNote")

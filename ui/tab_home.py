@@ -163,7 +163,7 @@ class HomeTabMixin:
         self.run_title.setObjectName("runTitle")
         self.run_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         rb.addWidget(self.run_title)
-        self.run_field = QLineEdit("��")
+        self.run_field = QLineEdit("—")
         self.run_field.setObjectName("runField")
         self.run_field.setReadOnly(True)
         rb.addWidget(self.run_field)

@@ -1,6 +1,7 @@
 """Qt worker objects that run blocking tasks off the UI thread."""
 from __future__ import annotations
 
+import threading
 from typing import List, Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
@@ -190,3 +191,50 @@ class TGProxyUpdateWorker(QObject):
                 False, "error", "Ошибка обновления tg-ws-proxy: " + str(exc)
             )
         self.finished.emit(res)
+
+
+class AppSelfUpdateWorker(QObject):
+    """Checks our own GitHub releases for a newer Zapret GUI installer."""
+
+    finished = pyqtSignal(object)  # AppRelease or None
+
+    def run(self) -> None:
+        from app import self_updater
+        self.finished.emit(self_updater.update_available())
+
+
+class AppSelfUpdateDownloadWorker(QObject):
+    """Downloads the Zapret GUI installer and launches it.
+
+    Emits ``percent`` so the UI can show a real progress bar instead of an
+    indeterminate one, and supports cancellation via :meth:`cancel` (used
+    when the main window closes mid-download).
+    """
+
+    progress = pyqtSignal(str)
+    percent = pyqtSignal(int)    # 0-100 download completion
+    finished = pyqtSignal(str)   # "ok", "cancelled" or error message
+
+    def __init__(self, release):
+        super().__init__()
+        self._release = release
+        # threading.Event is safe to set from the UI thread while the worker
+        # thread reads it inside the download loop.
+        self._cancel = threading.Event()
+
+    def cancel(self) -> None:
+        """Ask the running download to stop as soon as possible."""
+        self._cancel.set()
+
+    def run(self) -> None:
+        try:
+            from app import self_updater
+            msg = self_updater.download_and_launch(
+                self._release,
+                on_status=lambda m: self.progress.emit(m),
+                on_progress=lambda p: self.percent.emit(p),
+                should_cancel=self._cancel.is_set,
+            )
+            self.finished.emit(msg)
+        except Exception as exc:  # noqa: BLE001
+            self.finished.emit("Ошибка: " + str(exc))

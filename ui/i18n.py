@@ -106,8 +106,8 @@ _TRANSLATIONS = {
         "Доступна новая версия": "New version available",
         # --- Telegram proxy tab ---
         "Telegram": "Telegram",
-        "Telegram про��с��": "Telegram proxy",
-        "Локальный MTProto-прокси для Telegram Desktop. Telegram подключ��ется к нему, а прокси туннелирует трафик через WebSocket к серверам Telegram — обход блокировок без сторонних серверов.":
+        "Telegram прокси": "Telegram proxy",
+        "Локальный MTProto-прокси для Telegram Desktop. Telegram подключается к нему, а прокси туннелирует трафик через WebSocket к серверам Telegram — обход блокировок без сторонних серверов.":
             "Local MTProto proxy for Telegram Desktop. Telegram connects to it and the proxy tunnels traffic via WebSocket to Telegram servers — bypassing blocks without any third-party server.",
         "Запускать вместе с zapret": "Start together with zapret",
         "Прокси выключен": "Proxy is off",
@@ -182,7 +182,7 @@ def localize_runtime_text(lang: str, text: str) -> str:
         out = out.replace(ru, en)
     out = re.sub(r"Доступна новая версия ([^.]+)\. Скачать и обновить стратегии\?", r"New version \1 is available. Download and update strategies?", out)
     out = re.sub(r"Обновлено до ([^:]+): распаковано (\d+) файлов\.", r"Updated to \1: unpacked \2 files.", out)
-    out = re.sub(r"Пропущено (\d+) зан��т��х файлов \(остановите защиту и повторите\)\.", r"Skipped \1 busy files (stop protection and try again).", out)
+    out = re.sub(r"Пропущено (\d+) занятых файлов \(остановите защиту и повторите\)\.", r"Skipped \1 busy files (stop protection and try again).", out)
     out = re.sub(r", отклик ~([0-9]+) мс", r", latency ~\1 ms", out)
     out = out.replace("Лучшая стратегия", "Best strategy")
     out = out.replace("Рабочая стратегия", "Working strategy")
