@@ -23,6 +23,13 @@
 #endif
 #define MyAppPublisher "Zapret GUI"
 #define MyAppExeName "ZapretGUI.exe"
+; Path to the freshly built exe that gets packaged. Normally build.bat puts it
+; in dist\, but the running app locks that file, so a build can be redirected:
+;   pyinstaller zapret-gui.spec --distpath dist_release
+;   ISCC /DMyAppExeSource="dist_release\ZapretGUI.exe" installer.iss
+#ifndef MyAppExeSource
+  #define MyAppExeSource "dist\ZapretGUI.exe"
+#endif
 
 [Setup]
 AppId={{B7F3B0E2-6E2A-4C9E-9E0A-3B2D5E7F1A10}
@@ -69,7 +76,7 @@ Name: "autostart"; Description: "Запускать Zapret GUI вместе с W
 Type: files; Name: "{app}\{#MyAppExeName}"
 
 [Files]
-Source: "dist\ZapretGUI.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#MyAppExeSource}"; DestDir: "{app}"; DestName: "{#MyAppExeName}"; Flags: ignoreversion
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 ; roblox_profile.json — installed next to the exe so advanced users can edit
 ; the Roblox bypass IP ranges WITHOUT rebuilding. Loaded at runtime by

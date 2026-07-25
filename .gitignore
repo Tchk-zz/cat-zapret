@@ -10,7 +10,9 @@ env/
 
 # --- Build output ---
 build/
+build_release/
 dist/
+dist_release/
 Output/
 *.exe
 *.spec.bak
