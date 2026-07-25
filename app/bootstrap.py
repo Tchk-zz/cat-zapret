@@ -24,9 +24,11 @@ USER_LISTS = {
     "list-exclude-user.txt": "domain.example.abc\n",
 }
 
-# Built-in custom strategies seeded into <zapret>/custom_strategies so they
-# appear in the strategy list for every user, regardless of which Flowseal
-# version is installed. Keyed by display name -> {description, args}.
+# Reference definition of the built-in Roblox profile, keyed by display name
+# -> {description, args}. NOTE: this is no longer seeded into
+# <zapret>/custom_strategies -- Roblox is an optional "combine" toggle in the
+# UI, and ensure_builtin_strategies() actively deletes legacy seeded copies.
+# The dict is kept because the UI and tests read the description/args from it.
 # Roblox was blocked in RF on 2025-12-03; the website loads over HTTPS (domain)
 # but joining a place is raw UDP to game-server IPs (ports 49152-65535, no SNI),
 # so a domain bypass cannot touch it. This profile (from Flowseal's RobloxFix)

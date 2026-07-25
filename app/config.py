@@ -1,8 +1,9 @@
 """Persistent JSON configuration for Zapret GUI.
 
 Stores user preferences and the last known working strategy so the app can
-start instantly next time. Settings live next to the executable in a
-``config.json`` file.
+start instantly next time. Settings live in the per-user data directory
+(``%LOCALAPPDATA%\\ZapretGUI\\config.json``); a legacy file next to the
+executable is migrated automatically on first run.
 """
 from __future__ import annotations
 

@@ -39,6 +39,45 @@ class AutoSelectResult:
 ProgressCb = Callable[[int, int, Strategy, str], None]
 
 
+def prioritize(
+    strategies: List[Strategy],
+    last_working: Optional[str] = None,
+    preferred_order: Optional[List[str]] = None,
+) -> List[Strategy]:
+    """Reorder strategies so the most likely winners are tried first.
+
+    Order: the strategy that worked last time, then the user's preferred
+    order, then everything else in its original order. Every strategy is
+    still tried -- nothing is dropped -- but on a typical machine the sweep
+    now ends on the first or second attempt instead of grinding through the
+    whole list.
+    """
+    by_name = {}
+    for strat in strategies:
+        by_name.setdefault(strat.name, strat)
+
+    ordered: List[Strategy] = []
+    seen = set()
+
+    def _take(name: Optional[str]) -> None:
+        if not name or name in seen:
+            return
+        strat = by_name.get(name)
+        if strat is None:
+            return
+        seen.add(name)
+        ordered.append(strat)
+
+    _take(last_working)
+    for name in preferred_order or []:
+        _take(name)
+    for strat in strategies:
+        if strat.name not in seen:
+            seen.add(strat.name)
+            ordered.append(strat)
+    return ordered
+
+
 class AutoSelector:
     def __init__(
         self,
@@ -50,6 +89,7 @@ class AutoSelector:
         attempts: int = 3,
         enable_voice: bool = True,
         stall_timeout: float = 4.0,
+        max_deep_candidates: int = 8,
     ):
         self.runner = runner
         self.warmup_seconds = warmup_seconds
@@ -59,6 +99,10 @@ class AutoSelector:
         self.attempts = attempts
         self.enable_voice = enable_voice
         self.stall_timeout = stall_timeout
+        # Hard cap for the deep stage of "best" mode. Each deep check costs
+        # roughly freeze_seconds * attempts, so an unbounded survivor list is
+        # what made the sweep run for half an hour on some machines.
+        self.max_deep_candidates = max_deep_candidates
         self._cancel = threading.Event()
 
     def cancel(self) -> None:
@@ -105,9 +149,13 @@ class AutoSelector:
         strategies: List[Strategy],
         on_progress: Optional[ProgressCb] = None,
         mode: str = "working",
+        last_working: Optional[str] = None,
+        preferred_order: Optional[List[str]] = None,
     ) -> AutoSelectResult:
         self._cancel.clear()
         on_progress = on_progress or (lambda *_: None)
+        if last_working or preferred_order:
+            strategies = prioritize(strategies, last_working, preferred_order)
         if mode == "best":
             return self._run_best(strategies, on_progress)
         return self._run_working(strategies, on_progress)
@@ -170,7 +218,7 @@ class AutoSelector:
     # --- best mode (two-stage) -------------------------------------------
     def _run_best(self, strategies, on_progress) -> AutoSelectResult:
         total = len(strategies)
-        candidates: List[Strategy] = []
+        candidates: List[tuple] = []  # (strat, quick score, quick latency)
         best_partial = None  # (strat, score, latency, detail) from quick stage
 
         # Stage 1: quick filter over every strategy.
@@ -190,7 +238,7 @@ class AutoSelector:
             q = self._quick()
             self.runner.log(f"[auto] {strat.name}: {q.detail}")
             if q.discord:
-                candidates.append(strat)
+                candidates.append((strat, q.score, q.latency_ms))
             elif q.score > 0:
                 cand = (strat, q.score, q.latency_ms, q.detail)
                 if best_partial is None or cand[1] > best_partial[1]:
@@ -209,8 +257,21 @@ class AutoSelector:
 
         # Stage 2: deep check on the survivors; keep the highest score.
         best_deep = None  # (strat, score, ok, latency, detail)
-        m = len(candidates)
-        for j, strat in enumerate(candidates, start=1):
+        # Only the most promising survivors get the (expensive) deep check.
+        # Sorted by the quick-stage score, then by latency, so the cap never
+        # throws away the fastest candidate.
+        candidates.sort(key=lambda c: (-c[1], c[2] if c[2] is not None else 1e9))
+        if self.max_deep_candidates > 0:
+            dropped = len(candidates) - self.max_deep_candidates
+            if dropped > 0:
+                candidates = candidates[: self.max_deep_candidates]
+                self.runner.log(
+                    f"[auto] deep stage limited to {len(candidates)} best "
+                    f"candidates ({dropped} skipped)"
+                )
+        deep_list = [c[0] for c in candidates]
+        m = len(deep_list)
+        for j, strat in enumerate(deep_list, start=1):
             if self._cancel.is_set():
                 self.runner.stop()
                 return AutoSelectResult(None, j - 1, m, cancelled=True, mode="best")

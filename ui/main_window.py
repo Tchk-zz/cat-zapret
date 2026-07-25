@@ -1854,8 +1854,8 @@ class MainWindow(QMainWindow):
         # than the panel's natural width — otherwise the last tab ("\u0418\u0433\u0440\u044b \u0438
         # \u0441\u0435\u0440\u0432\u0438\u0441\u044b") gets clipped on the right edge.
         self._top_nav.ensurePolished()
-        _nav_min = self._top_nav.sizeHint().width() + 48  # +24px breathing room each side
-        # Window is fixed-size (see setFixedSize above); no minimum-width needed.
+        # Window is fixed-size (see setFixedSize above), so no minimum-width
+        # enforcement is needed here; polishing alone keeps the metrics right.
         self.tabs.addTab(self._build_home_tab(), "\u0413\u043b\u0430\u0432\u043d\u0430\u044f")
         self.tabs.addTab(self._build_settings_tab(), "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438")
         # Strategy is tuned to fit the window exactly; do not wrap it in a page
@@ -4375,7 +4375,16 @@ class MainWindow(QMainWindow):
             enable_voice=self.config.enable_voice_check,
             stall_timeout=self.config.stall_timeout,
         )
-        self._auto_worker = AutoSelectWorker(selector, strategies, mode)
+        # Hints so the sweep starts with the strategy that already worked on
+        # this machine, followed by the user's preferred order. Cuts a full
+        # sweep down to a couple of checks in the common case.
+        self._auto_worker = AutoSelectWorker(
+            selector,
+            strategies,
+            mode,
+            last_working=self.config.last_working_strategy or None,
+            preferred_order=list(self.config.preferred_order or []),
+        )
         self._auto_thread = QThread(self)
         self._auto_worker.moveToThread(self._auto_thread)
         self._auto_thread.started.connect(self._auto_worker.run)

@@ -1,7 +1,7 @@
 """Qt worker objects that run blocking tasks off the UI thread."""
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
@@ -17,19 +17,31 @@ class AutoSelectWorker(QObject):
     finished = pyqtSignal(object)  # AutoSelectResult
 
     def __init__(
-        self, selector: AutoSelector, strategies: List[Strategy], mode: str = "working"
+        self,
+        selector: AutoSelector,
+        strategies: List[Strategy],
+        mode: str = "working",
+        last_working: Optional[str] = None,
+        preferred_order: Optional[List[str]] = None,
     ):
         super().__init__()
         self._selector = selector
         self._strategies = strategies
         self._mode = mode
+        # Hints that let the selector try the most likely winner first.
+        self._last_working = last_working
+        self._preferred_order = preferred_order
 
     def run(self) -> None:
         def on_progress(idx: int, total: int, strat: Strategy, phase: str) -> None:
             self.progress.emit(idx, total, strat.name, phase)
 
         result: AutoSelectResult = self._selector.run(
-            self._strategies, on_progress, self._mode
+            self._strategies,
+            on_progress,
+            self._mode,
+            last_working=self._last_working,
+            preferred_order=self._preferred_order,
         )
         self.finished.emit(result)
 

@@ -63,6 +63,31 @@ def _focus_existing_instance() -> bool:
         return False
 
 
+# Design canvas the whole interface is laid out against.
+DESIGN_WIDTH = 1240
+DESIGN_HEIGHT = 900
+# The window should never eat more than this share of the usable desktop.
+_MAX_HEIGHT_SHARE = 0.78
+_MAX_WIDTH_SHARE = 0.64
+_MIN_SCALE = 0.62
+
+
+def scale_factor_for(work_w: float, work_h: float) -> float:
+    """Return the UI scale factor for a desktop work area of this size.
+
+    Pure arithmetic (no Windows calls) so it can be unit-tested: 1.0 means
+    "draw at the design size", smaller values shrink the whole interface.
+    """
+    if work_w <= 0 or work_h <= 0:
+        return 1.0
+    factor = min(
+        1.0,
+        (work_h * _MAX_HEIGHT_SHARE) / DESIGN_HEIGHT,
+        (work_w * _MAX_WIDTH_SHARE) / DESIGN_WIDTH,
+    )
+    return max(factor, _MIN_SCALE)  # never shrink into unreadability
+
+
 def _apply_ui_scale() -> None:
     """Scale the whole UI down when the desktop is smaller than the design size.
 
@@ -95,10 +120,7 @@ def _apply_ui_scale() -> None:
         work_h = (rect.bottom - rect.top) / dpi_scale
         if work_w <= 0 or work_h <= 0:
             return
-        # Target: the window should take ~78% of the usable height and ~64%
-        # of the usable width at most.
-        factor = min(1.0, (work_h * 0.78) / 900.0, (work_w * 0.64) / 1240.0)
-        factor = max(factor, 0.62)  # never shrink into unreadability
+        factor = scale_factor_for(work_w, work_h)
         if factor < 0.98:
             os.environ["QT_SCALE_FACTOR"] = f"{factor:.3f}"
     except Exception:
