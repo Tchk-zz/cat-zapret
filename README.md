@@ -94,10 +94,14 @@ zapret-gui/
   build.bat / zapret-gui.spec
   app/
     config.py             — настройки + автопоиск папки zapret
+    bootstrap.py          — первичная установка движка и встроенные стратегии
     strategy_manager.py   — разбор .bat в стратегии
+    strategy_catalog.py   — каталог стратегий (замена .bat-файлам)
     process_runner.py     — запуск/остановка winws.exe
     connectivity.py       — проверка доступа YouTube/Discord
     auto_selector.py      — логика автоподбора
+    list_manager.py       — списки доменов (list-*.txt)
+    exclusions.py         — исключения из обхода
     service_manager.py    — служба Windows
     autostart.py          — автозапуск
     updater.py            — обновление стратегий с GitHub
@@ -107,7 +111,14 @@ zapret-gui/
     main_window.py        — главное окно (вкладки)
     tray.py               — иконка в трее
     workers.py            — фоновые потоки
-    theme.py              — тёмная тема
+    theme.py              — базовые стили (QSS)
+    themes_catalog.py     — каталог из 10 тем оформления
+    waiting_runner_game.py — мини-игра на время автоподбора
+  tools/
+    repo.py               — снапшоты/откат без установленного git
+  tests/
+    test_core_logic.py    — основные тесты логики
+    test_gui_smoke.py     — smoke-тесты интерфейса
 ```
 
 ## Лицензия и благодарности
