@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import QRect, Qt
 from PyQt6.QtGui import (
-    QBrush, QColor, QFontDatabase, QLinearGradient, QPainter, QPixmap,
+    QBrush, QColor, QFont, QFontDatabase, QLinearGradient, QPainter, QPixmap,
     QRadialGradient,
 )
 from PyQt6.QtWidgets import QWidget
@@ -13,6 +13,23 @@ from PyQt6.QtWidgets import QWidget
 from .paths import asset_path_or_empty
 
 UNBOUNDED_FAMILY = "Unbounded"
+
+
+def smooth_code_font(size: int = 12) -> QFont:
+    """Readable anti-aliased monospace font for code/log widgets.
+
+    Lives here (not in main_window) so the strategy editor, the log view and
+    the hosts dialog can all reach it without importing the window module.
+    """
+    font = QFont("Cascadia Mono")
+    font.setFamilies(["Cascadia Mono", "Consolas", "Liberation Mono", "Courier New"])
+    font.setPointSize(size)
+    font.setStyleStrategy(
+        QFont.StyleStrategy.PreferAntialias
+        | QFont.StyleStrategy.PreferQuality
+    )
+    font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+    return font
 
 
 def _font_path(filename: str) -> str:
