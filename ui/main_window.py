@@ -1814,7 +1814,24 @@ class MainWindow(QMainWindow):
         if hasattr(self, "tabs") and self.tabs.count():
             self.tabs.setCurrentIndex(self.tabs.count() - 1)
 
+    def _home_parking(self) -> QWidget:
+        """Hidden holder used to park widgets while the home tab is rebuilt.
+
+        A widget with no parent becomes a top-level window, and Qt may flash it
+        on screen for a frame before it is put back into a layout. Parking it
+        inside a permanently hidden child widget avoids that flicker while
+        keeping the widget's own show/hide state untouched.
+        """
+        holder = getattr(self, "_home_parking_widget", None)
+        if holder is None:
+            holder = QWidget(self)
+            holder.setObjectName("homeParking")
+            holder.hide()
+            self._home_parking_widget = holder
+        return holder
+
     def _detach_home_widgets(self, layout) -> None:
+        park = self._home_parking()
         while layout.count():
             item = layout.takeAt(0)
             wdg = item.widget()
@@ -1830,8 +1847,9 @@ class MainWindow(QMainWindow):
                     getattr(self, "sleep_z", None),
                 ):
                     if persistent is not None and persistent.parent() is wdg:
-                        persistent.setParent(None)
-                wdg.setParent(None)
+                        persistent.setParent(park)
+                wdg.setParent(park)
+                wdg.deleteLater()
                 continue
             sub = item.layout()
             if sub is not None:
@@ -1854,20 +1872,21 @@ class MainWindow(QMainWindow):
         self._home_layout_is_dark = dark
 
     def _arrange_home_classic(self) -> None:
+        park = self._home_parking()
         self.home_cat.setVisible(False)
-        self.home_cat.setParent(None)
+        self.home_cat.setParent(park)
         self.home_log.setVisible(True)
         self.run_title.setText("Запущенная стратегия:")
         self.run_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         if hasattr(self, "home_tg_card"):
             self.home_tg_card.setVisible(False)
-            self.home_tg_card.setParent(None)
+            self.home_tg_card.setParent(park)
         if hasattr(self, "home_zap_card"):
             self.home_zap_card.setVisible(False)
-            self.home_zap_card.setParent(None)
+            self.home_zap_card.setParent(park)
         if hasattr(self, "home_auto_stack"):
             self.home_auto_stack.setVisible(False)
-            self.home_auto_stack.setParent(None)
+            self.home_auto_stack.setParent(park)
         if hasattr(self, "waiting_runner_game"):
             self.waiting_runner_game.set_searching(False)
         self.run_box.setVisible(True)
@@ -1974,7 +1993,7 @@ class MainWindow(QMainWindow):
         right = QVBoxLayout()
         right.setSpacing(20)  # keep the ~20pt gap between the two cards
         self.run_box.setVisible(False)
-        self.run_box.setParent(None)
+        self.run_box.setParent(self._home_parking())
         self._set_action_deco(True)
         # The game begins at the same vertical level as Telegram Proxy.
         self.home_right_top_spacer = QWidget()

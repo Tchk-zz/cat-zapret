@@ -208,6 +208,18 @@ def main() -> int:
     except Exception:
         pass
 
+    # Windows shows the taskbar icon of whatever process owns the window
+    # group. When running from source that process is python.exe, so the
+    # taskbar shows the Python logo instead of ours. Declaring our own
+    # AppUserModelID makes Windows use the window icon we set below.
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "CatZapret.ZapretGUI"
+        )
+    except Exception:
+        pass
+
     app = QApplication(sys.argv)
     app.setApplicationName("Zapret GUI")
     app.setQuitOnLastWindowClosed(False)
