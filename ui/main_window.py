@@ -1832,6 +1832,20 @@ class MainWindow(QMainWindow):
 
     def _detach_home_widgets(self, layout) -> None:
         park = self._home_parking()
+        # Widgets the window keeps a Python reference to must survive the
+        # rebuild: deleting them would leave dangling wrappers and crash with
+        # "wrapped C/C++ object has been deleted". Only anonymous throwaway
+        # containers created by the previous arrangement may be destroyed.
+        keep = set()
+        for value in vars(self).values():
+            keep.add(id(value))
+            if isinstance(value, (list, tuple, set)):
+                for item in value:
+                    keep.add(id(item))
+                    if isinstance(item, (list, tuple)):
+                        keep.update(id(sub) for sub in item)
+            elif isinstance(value, dict):
+                keep.update(id(item) for item in value.values())
         while layout.count():
             item = layout.takeAt(0)
             wdg = item.widget()
@@ -1849,7 +1863,8 @@ class MainWindow(QMainWindow):
                     if persistent is not None and persistent.parent() is wdg:
                         persistent.setParent(park)
                 wdg.setParent(park)
-                wdg.deleteLater()
+                if id(wdg) not in keep:
+                    wdg.deleteLater()
                 continue
             sub = item.layout()
             if sub is not None:
