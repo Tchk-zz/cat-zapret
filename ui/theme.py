@@ -10,6 +10,8 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import QWidget
 
+from .paths import asset_path_or_empty
+
 UNBOUNDED_FAMILY = "Unbounded"
 
 
@@ -32,23 +34,9 @@ def _font_path(filename: str) -> str:
     return ""
 
 
-def _asset_path(filename: str) -> str:
-    """Locate a bundled UI asset, both from source and when frozen by PyInstaller."""
-    roots = []
-    meipass = getattr(sys, "_MEIPASS", None)
-    if meipass:
-        roots.append(Path(meipass) / "ui" / "assets")
-        roots.append(Path(meipass) / "assets")
-    here = Path(__file__).resolve().parent
-    roots.append(here / "assets")
-    for root in roots:
-        cand = root / filename
-        try:
-            if cand.is_file():
-                return str(cand)
-        except OSError:
-            pass
-    return ""
+# Shared with main_window and tray (see ui/paths.py). Returns "" when the
+# image is missing so the callers below can skip loading it.
+_asset_path = asset_path_or_empty
 
 
 def load_app_fonts() -> str:

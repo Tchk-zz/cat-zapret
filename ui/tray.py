@@ -8,23 +8,12 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QColor, QFontDatabase, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import QMenu, QSystemTrayIcon
 
+from .paths import asset_path_or_empty
 
-def _asset_path(filename: str) -> str:
-    """Locate tray icon assets from source or a PyInstaller bundle."""
-    roots = []
-    meipass = getattr(sys, "_MEIPASS", None)
-    if meipass:
-        roots.append(Path(meipass) / "ui" / "assets")
-        roots.append(Path(meipass) / "assets")
-    roots.append(Path(__file__).resolve().parent / "assets")
-    for root in roots:
-        candidate = root / filename
-        try:
-            if candidate.is_file():
-                return str(candidate)
-        except OSError:
-            pass
-    return ""
+
+# Shared with main_window and theme (see ui/paths.py). Returns "" when the
+# icon file is missing, which makes _star_icon fall back to a drawn dot.
+_asset_path = asset_path_or_empty
 
 
 def _dot_icon(color: str) -> QIcon:
