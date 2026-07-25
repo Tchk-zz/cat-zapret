@@ -1,0 +1,15 @@
+Zapret GUI
+Copyright (c) 2026 Имечко Фамилия
+
+This project is an independent graphical interface for managing the Flowseal
+zapret-discord-youtube bundle. It is not affiliated with Flowseal, bol-van,
+Discord, YouTube, Google, Roblox, Riot Games, Valve, Epic Games, Blizzard,
+FACEIT, Microsoft, The Qt Company, Riverbank Computing or ReQrypt.
+
+The GUI code in this repository is distributed under the GNU General Public
+License version 3.0 (GPL-3.0), primarily because the application uses PyQt6,
+which is GPL-3.0 unless a commercial PyQt license is obtained.
+
+The application downloads or embeds third-party components at build/runtime.
+Their copyright notices and licenses remain with their respective authors.
+See THIRD_PARTY_NOTICES.md for details.

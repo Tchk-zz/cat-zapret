@@ -1,0 +1,5 @@
+PyQt6>=6.6,<7
+requests>=2.31,<3
+psutil>=5.9,<7
+cryptography>=41.0.7
+pywin32>=306; platform_system == "Windows"

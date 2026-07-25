@@ -1,0 +1,12 @@
+# Development dependencies — not required to RUN the app, but needed to
+# contribute: run the GUI smoke tests, type-check, build the docs.
+#
+# Install with:
+#   pip install -r requirements.txt -r requirements-dev.txt
+
+# Run the GUI smoke tests in tests/test_gui_smoke.py.
+pytest>=8.0
+pytest-qt>=4.4
+
+# Static analysis — used by CI to catch unused imports, undefined names.
+pyflakes>=3.0
