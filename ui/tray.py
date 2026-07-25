@@ -1,8 +1,6 @@
 """System tray icon with status colour and quick actions."""
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QColor, QFontDatabase, QIcon, QPainter, QPixmap

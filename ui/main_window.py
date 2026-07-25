@@ -1,26 +1,23 @@
 """Main application window: Home / Settings / Strategy (list + editor + logs)."""
 from __future__ import annotations
 
-import math
-import re
 import sys
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 from PyQt6.QtCore import (
-    Qt, QThread, QTimer, QPropertyAnimation, QEasingCurve, QVariantAnimation,
-    pyqtSignal, QRect, QRectF, QPointF, QPoint, QSize,
+    Qt, QThread, QTimer, QPropertyAnimation, QEasingCurve, pyqtSignal,
+    QPoint, QSize,
 )
 from PyQt6.QtGui import (
-    QBrush, QColor, QConicalGradient, QFont, QIcon, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
+    QColor, QIcon, QPixmap,
 )
 from PyQt6.QtWidgets import (
-    QApplication, QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame,
-    QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QGridLayout, QGroupBox,
-    QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QMainWindow, QMessageBox, QDialog, QPlainTextEdit, QProgressBar,
-    QPushButton, QScrollArea, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QFileDialog, QFrame, QGraphicsDropShadowEffect, QGraphicsOpacityEffect,
+    QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+    QMainWindow, QMessageBox, QDialog,
+    QPlainTextEdit, QPushButton, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from app import autostart, bootstrap, editor as editor_mod, list_manager
@@ -44,7 +41,6 @@ from .theme import (
     smooth_code_font,
 )
 from .tray import Tray
-from .waiting_runner_game import WaitingRunnerGame
 from .workers import (
     AutoSelectWorker,
     BootstrapWorker,

@@ -6,47 +6,16 @@ attribute they use lives there as before.
 """
 from __future__ import annotations
 
-import math
-import re
-import sys
-import time
 from pathlib import Path
-from typing import List, Optional
 
 from PyQt6.QtCore import (
-    Qt, QThread, QTimer, QPropertyAnimation, QEasingCurve, QVariantAnimation,
-    pyqtSignal, QRect, QRectF, QPointF, QPoint, QSize,
-)
-from PyQt6.QtGui import (
-    QBrush, QColor, QConicalGradient, QFont, QIcon, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
+    Qt,
 )
 from PyQt6.QtWidgets import (
-    QApplication, QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame,
-    QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QGridLayout, QGroupBox,
-    QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QMainWindow, QMessageBox, QDialog, QPlainTextEdit, QProgressBar,
-    QPushButton, QScrollArea, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
+    QCheckBox, QFrame, QGroupBox, QHBoxLayout, QLabel, QVBoxLayout,
+    QWidget,
 )
 
-from app import autostart, bootstrap, editor as editor_mod, list_manager
-from app.auto_selector import AutoSelectResult, AutoSelector
-from app.config import AppConfig, default_data_dir
-from app.process_runner import ProcessRunner
-from app.service_manager import ServiceManager
-from app.strategy_manager import Strategy, StrategyManager
-from app import tg_proxy
-from .paths import asset_path
-from .tab_telegram import TelegramTabMixin
-from .theme import DARK_QSS, WIN11_DARK_QSS, WIN11_LIGHT_QSS, GradientBackground
-from .tray import Tray
-from .waiting_runner_game import WaitingRunnerGame
-from .workers import (
-    AutoSelectWorker,
-    BootstrapWorker,
-    CheckWorker,
-    ListUpdateWorker,
-    UpdateCheckWorker,
-)
 from .i18n import (  # noqa: E402
     _TRANSLATIONS,
     _TRANSLATIONS_REVERSE,

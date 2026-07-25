@@ -1,7 +1,6 @@
 """Lightweight pixel-art waiting game shown during dark-theme autoselect."""
 from __future__ import annotations
 
-import math
 import os
 import random
 import time

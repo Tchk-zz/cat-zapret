@@ -7,28 +7,23 @@ window module stays about wiring, not painting.
 from __future__ import annotations
 
 import math
-import time
 from typing import List, Optional
 
 from PyQt6.QtCore import (
-    Qt, QThread, QTimer, QPropertyAnimation, QEasingCurve, QVariantAnimation,
-    pyqtSignal, QRect, QRectF, QPointF, QPoint, QSize,
+    Qt, QPropertyAnimation, QEasingCurve, QVariantAnimation, QRect, QRectF,
+    QPointF, QSize,
 )
 from PyQt6.QtGui import (
-    QBrush, QColor, QConicalGradient, QFont, QIcon, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
+    QBrush, QColor, QConicalGradient, QFont, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
 )
 from PyQt6.QtWidgets import (
-    QApplication, QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame,
-    QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QGridLayout, QGroupBox,
-    QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QMainWindow, QMessageBox, QDialog, QPlainTextEdit, QProgressBar,
-    QPushButton, QScrollArea, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
+    QButtonGroup, QCheckBox, QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel,
+    QDialog, QProgressBar, QPushButton, QTextEdit,
+    QVBoxLayout, QWidget,
 )
 
 from .i18n import tr_text
 from .paths import asset_path
-from .theme import UNBOUNDED_FAMILY
-from .waiting_runner_game import WaitingRunnerGame
 
 
 class _ShimmerPlate(QWidget):
