@@ -11,6 +11,8 @@ env/
 # --- Build output ---
 build/
 dist/
+Output/
+*.exe
 *.spec.bak
 
 # --- Bundled third-party binaries (huge, re-downloaded by the bootstrapper) ---
