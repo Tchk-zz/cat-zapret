@@ -114,8 +114,17 @@ var
 begin
   { /F is intentional: ZapretGUI can live in the tray/elevated state and Inno's
     automatic close step may not terminate it. If it remains running, Windows
-    keeps the installed exe locked and the installer leaves the old version. }
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM ' + FileName + ' /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    keeps the installed exe locked and the installer leaves the old version.
+
+    /T IS DELIBERATELY ABSENT. When the update is started from inside the app,
+    ZapretGUI spawns this very Setup process, so Setup is a CHILD of
+    ZapretGUI.exe. Measured: `taskkill /F /PID <parent> /T` also kills a child
+    created with DETACHED_PROCESS -- DETACHED_PROCESS only detaches the
+    console, not the parent/child link. With /T the installer therefore killed
+    ITSELF right after the user pressed "Install": the app closed, setup died
+    mid-way and the old version stayed installed. Killing by image name without
+    /T terminates every ZapretGUI.exe instance and leaves Setup alive. }
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM ' + FileName, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   { Give Windows a moment to release file handles (WinDivert driver unload,
     antivirus inspection of the dying process, etc.). Without this pause the
     next [InstallDelete]/[Files] step can race the handle cleanup and fail

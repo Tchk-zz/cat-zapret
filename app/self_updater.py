@@ -334,13 +334,27 @@ def download_and_launch(
     _pct(100)
     _report(f"Загружено {downloaded // 1024 // 1024} МБ. Запускаю установщик...")
 
+    # The installer must NOT stay a child of this process. Setup closes the
+    # running ZapretGUI.exe with taskkill before copying files; any variant of
+    # that call using /T walks the process tree and would kill Setup itself,
+    # leaving the old version installed (measured: DETACHED_PROCESS does not
+    # break the parent/child link, it only detaches the console). Launching
+    # through `cmd /c start` inserts a throwaway cmd that exits immediately, so
+    # Setup is orphaned and survives whatever happens to this process.
     try:
         kwargs: dict = {}
         if sys.platform == "win32":
             kwargs["creationflags"] = (
                 subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
             )
-        subprocess.Popen([tmp_path], **kwargs)
+            kwargs["close_fds"] = True
+            # The empty "" is the window title argument of `start`; without it
+            # a quoted path would be taken as the title and nothing would run.
+            subprocess.Popen(
+                ["cmd", "/c", "start", "", tmp_path], shell=False, **kwargs
+            )
+        else:
+            subprocess.Popen([tmp_path], **kwargs)
     except Exception as exc:
         _discard(tmp_path)
         return "Ошибка запуска установщика: " + str(exc)
