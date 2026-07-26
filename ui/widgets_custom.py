@@ -515,7 +515,10 @@ class BypassTestPopup(QDialog):
             ))
         else:
             icon.setText("●")
-            icon.setStyleSheet("color: #ffffff; font-size: 18px;")
+            # Theme-aware: white would be invisible on the light popup card.
+            icon.setStyleSheet(
+                "color: %s; font-size: 18px;" % ("#000000" if self._light_theme else "#ffffff")
+            )
         label = QLabel(name)
         label.setObjectName("serviceName")
         state = QLabel(tr_text(self._lang, "Работает!") if ok else tr_text(self._lang, "Не работает"))
@@ -523,7 +526,11 @@ class BypassTestPopup(QDialog):
         mark = QLabel("✓" if ok else "×")
         mark.setObjectName("serviceMark")
         mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        mark.setStyleSheet("color: #ffffff;" if ok else "color: #ff8fa3;")
+        # Theme-aware: the "ok" tick must not be white on the light popup card.
+        if ok:
+            mark.setStyleSheet("color: #000000;" if self._light_theme else "color: #ffffff;")
+        else:
+            mark.setStyleSheet("color: #c0392b;" if self._light_theme else "color: #ff8fa3;")
         row.addWidget(icon)
         row.addWidget(label)
         row.addStretch(1)
@@ -1239,7 +1246,18 @@ class _Dark3DButton(QPushButton):
 
 
 class _DarkAnimatedProgressBar(QProgressBar):
-    """Dark progress bar with a looping #010101 -> #a9a9a9 shimmer."""
+    """Dark progress bar with a looping #010101 -> #a9a9a9 shimmer.
+
+    The soft halo around the bar is painted here by hand. It used to come from
+    a QGraphicsDropShadowEffect, but QGraphicsEffect composites through an
+    offscreen pixmap; at UI scales below 1 (Full HD, see ui/effects.py) that
+    pixmap is undersized and the halo was clipped, which showed up as a torn
+    edge on the right side of the bar. Painting it ourselves inside a padded
+    widget keeps the glow and removes the artifact at any scale.
+    """
+
+    #: Free space reserved inside the widget so the halo has room to fade out.
+    GLOW_PAD = 7.0
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1261,8 +1279,26 @@ class _DarkAnimatedProgressBar(QProgressBar):
     def paintEvent(self, event):  # noqa: N802 (Qt naming)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        rect = QRectF(self.rect()).adjusted(1.0, 1.0, -1.0, -1.0)
+        pad = self.GLOW_PAD
+        rect = QRectF(self.rect()).adjusted(pad, pad, -pad, -pad)
         radius = 5.0
+
+        # Soft halo around the whole bar, drawn as a few widening strokes with
+        # fading alpha. It stays inside the padded widget, so it never gets
+        # cut off at the ends of the bar.
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        layers = 6
+        for i in range(layers, 0, -1):
+            spread = pad * (i / layers)
+            alpha = int(52 * (1.0 - (i - 1) / layers))
+            if alpha <= 0:
+                continue
+            painter.setPen(QPen(QColor(190, 195, 210, alpha), 2.0))
+            painter.drawRoundedRect(
+                rect.adjusted(-spread, -spread, spread, spread),
+                radius + spread,
+                radius + spread,
+            )
 
         painter.setPen(QPen(QColor(86, 88, 94, 210), 1.0))
         painter.setBrush(QColor(8, 8, 8, 245))
@@ -1308,7 +1344,10 @@ class _HomeAutoSelectPanel(_Dark3DPanel):
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(30, 16, 30, 14)
-        lay.setSpacing(8)
+        # The progress bar carries 7 px of transparent padding on each side for
+        # its halo, so the layout spacing is reduced by the same amount and the
+        # panel keeps its original look and height.
+        lay.setSpacing(1)
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
@@ -1337,12 +1376,10 @@ class _HomeAutoSelectPanel(_Dark3DPanel):
         self.bar = _DarkAnimatedProgressBar()
         self.bar.setRange(0, 100)
         self.bar.setValue(0)
-        self.bar.setFixedHeight(12)
-        bar_glow = QGraphicsDropShadowEffect(self.bar)
-        bar_glow.setOffset(0, 0)
-        bar_glow.setBlurRadius(16)
-        bar_glow.setColor(QColor(190, 195, 210, 135))
-        self.bar.setGraphicsEffect(bar_glow)
+        # 12 px bar + GLOW_PAD on both sides: the bar paints its own halo
+        # inside this padding, so no QGraphicsEffect is needed and nothing is
+        # clipped at the ends.
+        self.bar.setFixedHeight(12 + int(2 * _DarkAnimatedProgressBar.GLOW_PAD))
         lay.addWidget(self.bar)
 
         self.detail = QLabel("[0/0] \u041f\u043e\u0434\u0433\u043e\u0442\u043e\u0432\u043a\u0430...")

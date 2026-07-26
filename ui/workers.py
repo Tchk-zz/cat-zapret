@@ -194,13 +194,21 @@ class TGProxyUpdateWorker(QObject):
 
 
 class AppSelfUpdateWorker(QObject):
-    """Checks our own GitHub releases for a newer Zapret GUI installer."""
+    """Checks our own GitHub releases for a newer Zapret GUI installer.
 
-    finished = pyqtSignal(object)  # AppRelease or None
+    Emits a ``(status, release)`` pair so the window can tell "you are up to
+    date" apart from "the check failed". Previously both cases arrived as
+    ``None`` and a failed check looked like the button did nothing.
+    """
+
+    finished = pyqtSignal(object)  # (status, AppRelease|None)
 
     def run(self) -> None:
         from app import self_updater
-        self.finished.emit(self_updater.update_available())
+        try:
+            self.finished.emit(self_updater.check_update())
+        except Exception:  # noqa: BLE001
+            self.finished.emit(("error", None))
 
 
 class AppSelfUpdateDownloadWorker(QObject):

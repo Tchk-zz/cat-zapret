@@ -103,7 +103,8 @@ def _parse_digest(asset: dict) -> str:
 
     GitHub publishes it as ``"digest": "sha256:<hex>"``. Older API responses
     (and GitHub Enterprise) may not have the field at all, in which case we
-    return "" and the download is accepted without hash verification.
+    return "" and download_and_launch() refuses to run the installer: an
+    unverifiable file must never be executed with admin rights.
     """
     digest = str(asset.get("digest") or "").strip()
     prefix = "sha256:"
@@ -151,13 +152,30 @@ def update_available() -> Optional[AppRelease]:
 
     Returns None if we are already up to date or the check fails.
     """
-    cur = local_version()
+    status, rel = check_update()
+    return rel if status == "update" else None
+
+
+def check_update() -> tuple:
+    """Check GitHub and report *why* there is nothing to install.
+
+    ``update_available()`` collapses "already up to date" and "the check
+    failed" into a single ``None``, so the UI silently did nothing when GitHub
+    was unreachable and the user thought the button was broken. This variant
+    returns a ``(status, release)`` pair:
+
+    * ``("update", release)``  -- a newer release is available.
+    * ``("uptodate", None)``   -- the installed version is current.
+    * ``("error", None)``      -- the check itself failed (no network, GitHub
+      down, rate limited, no installer asset in the latest release).
+    """
     rel = latest_release()
     if rel is None:
-        return None
+        return ("error", None)
+    cur = local_version()
     if cur and _norm(rel.tag) <= _norm(cur):
-        return None
-    return rel
+        return ("uptodate", None)
+    return ("update", rel)
 
 
 # ---------------------------------------------------------------------------
@@ -302,12 +320,15 @@ def download_and_launch(
                 "Файл удалён, установка отменена."
             )
         _report("Контрольная сумма SHA-256 совпала.")
-    elif release.size and downloaded != release.size:
+    else:
+        # No published digest: a size match proves nothing about the contents,
+        # and this file is about to be executed with admin rights. Refuse.
         _discard(tmp_path)
         return (
-            f"Ошибка: размер установщика не совпал "
-            f"(ожидалось {release.size} Б, получено {downloaded} Б). "
-            "Файл удалён, установка отменена."
+            "Ошибка: для этого релиза не опубликована контрольная сумма SHA-256, "
+            "поэтому подлинность установщика проверить невозможно. "
+            "Файл удалён, установка отменена. "
+            "Скачайте обновление вручную со страницы релизов на GitHub."
         )
 
     _pct(100)

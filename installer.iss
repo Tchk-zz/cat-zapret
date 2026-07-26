@@ -125,9 +125,10 @@ end;
 
 function InitializeSetup(): Boolean;
 begin
-  { Run before Inno's preparation/files-in-use checks, so the old installed exe
-    is not locked when the new one is copied. }
-  KillProcessByName('{#MyAppExeName}');
+  { Do NOT kill the running app here. InitializeSetup runs before the wizard is
+    shown, so the user's app was being closed even if they cancelled the setup
+    on the very first page. The running app is closed later, in CurStepChanged
+    at ssInstall -- i.e. only after the user confirmed the installation. }
   Result := True;
 end;
 
@@ -173,12 +174,36 @@ begin
   Result := not WizardSilent();
 end;
 
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  DataDir: String;
+begin
+  if CurUninstallStep = usPostUninstall then
+  begin
+    { Settings live in %LOCALAPPDATA%\ZapretGUI (app/config.py). Ask first --
+      deleting the user's strategies/config silently is never acceptable. }
+    DataDir := ExpandConstant('{localappdata}\ZapretGUI');
+    if DirExists(DataDir) then
+    begin
+      if MsgBox('Удалить также настройки Zapret GUI (выбранная стратегия, тема, secret Telegram-прокси)?' + #13#10 + #13#10 +
+                DataDir + #13#10 + #13#10 +
+                'Нажмите "Нет", если планируете установить программу заново.',
+                mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+      begin
+        DelTree(DataDir, True, True, True);
+      end;
+    end;
+  end;
+end;
+
 [UninstallRun]
 ; Remove the scheduled task on uninstall.
 Filename: "schtasks.exe"; Parameters: "/Delete /TN ZapretGUI_Autostart /F"; Flags: runhidden
 
-[UninstallDelete]
-; Remove per-user data (config, tg-ws-proxy engine state). Use {autoappdata}
-; which resolves correctly regardless of PrivilegesRequired.
-Type: filesandordirs; Name: "{autoappdata}\ZapretGUI"
+; Per-user data (config.json, tg-ws-proxy engine state) lives in
+; %LOCALAPPDATA%\ZapretGUI -- see app/config.py default_data_dir(), which uses
+; the LOCALAPPDATA environment variable. The old [UninstallDelete] entry used
+; {autoappdata} (= roaming AppData), so it silently deleted nothing and left
+; the real settings folder behind forever. It also deleted user data without
+; asking. Both problems are fixed in CurUninstallStepChanged below.
 

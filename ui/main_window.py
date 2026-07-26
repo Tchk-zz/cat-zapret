@@ -1373,13 +1373,36 @@ class MainWindow(
         worker.finished.connect(self._on_app_update_checked)
         thread.start()
 
-    def _on_app_update_checked(self, release) -> None:
+    def _on_app_update_checked(self, result) -> None:
         if self._app_update_thread is not None:
             self._app_update_thread.quit()
             self._app_update_thread.wait()
             self._app_update_thread = None
 
         silent = getattr(self, "_app_update_silent", False)
+
+        # The worker sends (status, release). Older call sites may still pass a
+        # bare release object or None, so accept both shapes.
+        if isinstance(result, tuple):
+            status, release = result
+        else:
+            status, release = ("uptodate" if result is None else "update"), result
+
+        if status == "error":
+            # Do not stay silent on a failed check -- that looked like the
+            # "Обновить приложение" button was broken.
+            self._log("[обновление] не удалось проверить обновления Zapret GUI")
+            if not silent:
+                QMessageBox.warning(
+                    self,
+                    self._msg_title("Обновление приложения"),
+                    self._msg_text(
+                        "Не удалось проверить обновления.\n\n"
+                        "Возможно, нет интернета или GitHub временно недоступен. "
+                        "Попробуйте ещё раз позже."
+                    ),
+                )
+            return
 
         if release is None:
             # No newer version found
