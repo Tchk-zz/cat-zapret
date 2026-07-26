@@ -50,7 +50,8 @@ when dependencies change.
 ## Other Python dependencies
 
 - `requests` — Apache-2.0
-- `psutil` — BSD-style license
+- `cryptography` — Apache-2.0 or BSD-style dual license (used by the embedded
+  tg-ws-proxy engine for MTProto encryption)
 - `pywin32` — Python Software Foundation / BSD-style license
 - Transitive dependencies may include `urllib3`, `certifi`, `idna`, and `charset-normalizer`.
 

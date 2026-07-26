@@ -1,5 +1,24 @@
+# Runtime dependencies of ZapretGUI. Keep in sync with THIRD_PARTY_NOTICES.md.
+# Tools for developing (pytest, pyflakes) live in requirements-dev.txt.
+
+# The GUI itself.
 PyQt6>=6.6,<7
+
+# All network access: update checks, list downloads, connectivity probes
+# (app/connectivity.py, app/list_manager.py, app/self_updater.py,
+# app/updater.py, app/tg_proxy.py).
 requests>=2.31,<3
-psutil>=5.9,<7
+
+# NOT used by ZapretGUI's own code -- required by the embedded tg-ws-proxy
+# engine (app/tg_proxy_engine/_aes.py) for MTProto encryption. Removing it
+# breaks the Telegram proxy at runtime, so do not treat it as unused.
 cryptography>=41.0.7
+
+# Not imported anywhere in the app (Windows APIs are called through the
+# standard-library ctypes and winreg instead). Kept because the Windows CI
+# job and the PyInstaller build environment install it; drop it only after a
+# full build + installer smoke test proves nothing depends on it.
 pywin32>=306; platform_system == "Windows"
+
+# psutil was listed here but is not imported by any module -- removed after a
+# repository-wide check (2026-07). Add it back only together with real usage.

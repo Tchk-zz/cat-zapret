@@ -10,7 +10,9 @@
 ;
 ; build_installer.bat ALWAYS passes /DMyAppVersion=<value from VERSION file>
 ; before invoking ISCC, so the installer version and the in-app version
-; (app/tg_proxy_engine.__version__) always agree.
+; always agree. The app reads the very same VERSION file at runtime
+; (app/__init__.py -> _read_version()), and it is shipped next to the exe in
+; the [Files] section below.
 ;
 ; If somebody compiles installer.iss manually without that flag, fall back
 ; to "1.0.0" so the script still compiles. We deliberately do NOT try to
@@ -189,7 +191,9 @@ var
 begin
   if CurUninstallStep = usPostUninstall then
   begin
-    { Settings live in %LOCALAPPDATA%\ZapretGUI (app/config.py). Ask first --
+    { Settings live in %LOCALAPPDATA%\ZapretGUI (app/config.py). The log file
+      folder (logs\zapret-gui.log, app/applog.py) and the crash log live in
+      the same folder, so removing this tree cleans those up too. Ask first --
       deleting the user's strategies/config silently is never acceptable. }
     DataDir := ExpandConstant('{localappdata}\ZapretGUI');
     if DirExists(DataDir) then
