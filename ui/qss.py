@@ -35,7 +35,11 @@ QFrame#navIndicator {
 QPushButton#navBtn {
     background: transparent;
     color: #cfc7ee;
-    padding: 12px 46px;
+    /* Was 46px. Each section icon adds ~24px per button (20px glyph + gap),
+       so the side padding is cut by more than that: the panel ends up
+       slightly NARROWER than it was before icons existed, instead of
+       overflowing the window. Verified by measurement, not by eye. */
+    padding: 12px 16px;
     border: 1px solid transparent;
     border-radius: 12px;
     font-size: 19px; font-weight: 500;
@@ -625,7 +629,7 @@ QTabWidget#innerTabs::pane {
     border-radius: 14px;
 }
 QFrame#navIndicator { background: #323232; }
-QPushButton#navBtn { color: #dcdcdc; background: transparent; border: none; }
+QPushButton#navBtn { color: #dcdcdc; background: transparent; border: none; padding: 12px 16px; }
 QPushButton#navBtn:hover:!checked { background: #2a2a2a; color: #ffffff; }
 QPushButton#navBtn:checked { color: #ffffff; background: transparent; }
 
@@ -761,7 +765,9 @@ QFrame#navIndicator { background: #e9e9e9; border: 1px solid #d5d5d5; border-rad
 QPushButton#navBtn {
     background: transparent;
     color: #1a1a1a;
-    padding: 12px 46px;
+    /* Was 46px -- trimmed to make room for the section icons. See the same
+       comment in the purple sheet above. */
+    padding: 12px 16px;
     border: 1px solid transparent;
     border-radius: 12px;
     font-size: 19px; font-weight: 500;
@@ -1127,7 +1133,7 @@ QTabWidget#innerTabs::pane {
     border-radius: 14px;
 }
 QFrame#navIndicator { background: #e9e9e9; }
-QPushButton#navBtn { color: #1a1a1a; background: transparent; border: none; }
+QPushButton#navBtn { color: #1a1a1a; background: transparent; border: none; padding: 12px 16px; }
 QPushButton#navBtn:hover:!checked { background: #eeeeee; color: #000000; }
 QPushButton#navBtn:checked { color: #000000; background: transparent; }
 

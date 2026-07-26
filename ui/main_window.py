@@ -28,6 +28,7 @@ from app.service_manager import ServiceManager
 from app.strategy_manager import Strategy, StrategyManager
 from app import tg_proxy
 from .effects import apply_effect, effects_supported
+from .icons import NAV_ICON_NAMES
 from .paths import asset_path
 from .tab_games import GamesTabMixin
 from .tab_home import HomeTabMixin
@@ -202,7 +203,8 @@ class MainWindow(
             "Стратегия",
             "Игры и сервисы",
             "Telegram",
-        ], on_select=self.tabs.setCurrentIndex)
+        ], on_select=self.tabs.setCurrentIndex,
+           icon_names=list(NAV_ICON_NAMES))
         _bg_layout.addWidget(self._top_nav, 0, Qt.AlignmentFlag.AlignHCenter)
         _bg_layout.addWidget(self.tabs)
         self.setCentralWidget(self._bg)
@@ -566,14 +568,18 @@ class MainWindow(
             w = self.tabs.widget(index)
             if w is None:
                 return
-            # No opacity effect here on purpose. QGraphicsOpacityEffect renders
-            # the whole page into an offscreen pixmap; with the fractional
-            # QT_SCALE_FACTOR that main.py sets (plus PassThrough rounding)
-            # every glyph gets re-snapped to that pixmap grid and snaps back
-            # once the effect is removed -- that is the "text jumps a couple of
-            # pixels and returns" flicker seen on every tab switch. The same
-            # offscreen pass also flattens the drop-shadow / glow effects of
-            # child widgets while it is alive.
+            # No transition animation here on purpose -- two of them have been
+            # tried and both were worse than an instant switch:
+            #
+            # 1. QGraphicsOpacityEffect renders the whole page into an
+            #    offscreen pixmap; with the fractional QT_SCALE_FACTOR that
+            #    main.py sets (plus PassThrough rounding) every glyph gets
+            #    re-snapped to that pixmap grid and snaps back once the effect
+            #    is removed -- the "text jumps a couple of pixels and returns"
+            #    flicker. It also flattens child glow/shadow effects.
+            # 2. Sliding the page in by animating its position avoided all of
+            #    that, but simply looked worse in practice and was dropped at
+            #    the user's request.
             anim = getattr(self, "_tab_fade_anim", None)
             if anim is not None:
                 anim.stop()
@@ -1905,6 +1911,11 @@ class MainWindow(
             else:
                 self._top_nav._glow.setColor(QColor(150, 120, 255, 180))
                 self._top_nav._glow.setBlurRadius(getattr(self._top_nav, "_base_blur", 26))
+        # --- Nav section icons: dark glyphs on the light preset, light ones
+        # everywhere else, so they never disappear into the panel. ---
+        if hasattr(self, "_top_nav") and hasattr(self._top_nav, "set_icon_color"):
+            self._top_nav.set_icon_color(
+                "#1a1a1a" if self.current_theme == "light" else "#ffffff")
         # --- Card shadows: keep for image + purple themes; disable for flat presets ---
         if hasattr(self, "settings_card"):
             if is_neutral:

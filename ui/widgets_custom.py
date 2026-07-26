@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
 
 from .effects import apply_effect
 from .i18n import tr_text
+from .icons import nav_icon_size, themed_icon
 from .paths import asset_path
 
 
@@ -218,12 +219,19 @@ class _GlassNav(QFrame):
     """iOS-26-style frosted segmented control with an animated sliding
     highlight pill and a soft glow."""
 
-    def __init__(self, labels: List[str], on_select=None, parent=None):
+    def __init__(self, labels: List[str], on_select=None, parent=None,
+                 icon_names: Optional[List[str]] = None):
         super().__init__(parent)
         self.setObjectName("navPanel")
         self._on_select = on_select
         self._active = 0
         self._buttons: List[QPushButton] = []
+        # SVG section icons, tinted to match the active theme. Names map 1:1 to
+        # files in ui/assets/icons; a missing file degrades to a text-only tab.
+        self._icon_names: List[str] = list(icon_names or [])
+        self._icon_color = "#ffffff"
+        # Logical size that maps onto whole device pixels -- see ui/icons.py.
+        self._icon_size = nav_icon_size()
 
         # Sliding highlight that animates between sections.
         self._indicator = QFrame(self)
@@ -249,6 +257,9 @@ class _GlassNav(QFrame):
             btn.setCheckable(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _=False, idx=i: self._handle_click(idx))
+            if i < len(self._icon_names):
+                btn.setIcon(themed_icon(self._icon_names[i], self._icon_color))
+                btn.setIconSize(QSize(self._icon_size, self._icon_size))
             self._group.addButton(btn, i)
             lay.addWidget(btn)
             self._buttons.append(btn)
@@ -275,6 +286,20 @@ class _GlassNav(QFrame):
             btn.setText(text)
         self.updateGeometry()
         self._snap()
+
+    def set_icon_color(self, color: str) -> None:
+        """Re-tint the section icons after a theme switch.
+
+        Light presets need dark icons; the dark/purple presets need light ones.
+        themed_icon() caches per (name, colour, size), so switching back and
+        forth is free after the first render.
+        """
+        if not self._icon_names or color == self._icon_color:
+            return
+        self._icon_color = color
+        for i, btn in enumerate(self._buttons):
+            if i < len(self._icon_names):
+                btn.setIcon(themed_icon(self._icon_names[i], color))
 
     def set_active(self, index: int, animate: bool = True) -> None:
         if not (0 <= index < len(self._buttons)):

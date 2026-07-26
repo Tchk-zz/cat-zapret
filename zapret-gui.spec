@@ -78,6 +78,16 @@ if os.path.isdir(_theme_imgs):
         if os.path.isfile(_full):
             zapret_datas.append((_full, os.path.join('ui', 'assets', 'themes')))
 
+# Section icons (under ui/assets/icons/). Single-colour SVG line drawings used
+# by the top navigation; ui/icons.py renders and tints them at runtime. They
+# live in a nested folder, so the top-level loop above does not pick them up.
+_ui_icons = os.path.join(SPECPATH, 'ui', 'assets', 'icons')
+if os.path.isdir(_ui_icons):
+    for _f in os.listdir(_ui_icons):
+        _full = os.path.join(_ui_icons, _f)
+        if os.path.isfile(_full):
+            zapret_datas.append((_full, os.path.join('ui', 'assets', 'icons')))
+
 a = Analysis(
     ['main.py'],
     pathex=[],
