@@ -47,6 +47,10 @@ try:
 except ImportError:  # pragma: no cover
     requests = None  # type: ignore
 
+from .applog import get_logger
+
+_log = get_logger("telegram")
+
 # Default endpoint shown to the user before the proxy has written its config.
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 1443
@@ -645,7 +649,12 @@ def _ensure_config(data_dir: Path) -> TGProxyConfig:
             _save_config(data_dir, cfg)
             return cfg
         except (OSError, ValueError, TypeError):
-            pass
+            # Broken/unreadable config: a fresh secret is generated below, so
+            # the previously shared tg:// link stops working -- worth a record.
+            _log.warning(
+                "could not read the Telegram proxy config, generating a new secret",
+                exc_info=True,
+            )
     # First run: generate a stable secret so the tg:// link stays valid.
     cfg = TGProxyConfig(secret=_generate_secret())
     _save_config(data_dir, cfg)
@@ -667,7 +676,10 @@ def _save_config(data_dir: Path, cfg: TGProxyConfig) -> None:
             encoding="utf-8",
         )
     except OSError:
-        pass
+        # The link/secret shown in the GUI will not survive a restart.
+        _log.warning(
+            "could not save the Telegram proxy config in %s", data_dir, exc_info=True
+        )
 
 
 def read_config(data_dir: Path) -> TGProxyConfig:
@@ -763,7 +775,9 @@ class TGProxyRunner:
         try:
             self._log_cb(msg)
         except Exception:
-            pass
+            # The GUI log pane is gone or broken; keep the text in the journal
+            # instead of dropping it silently.
+            _log.warning("log callback failed for: %s", msg, exc_info=True)
 
     def is_running(self) -> bool:
         """Reflects the user's intent: True if started and not stopping.

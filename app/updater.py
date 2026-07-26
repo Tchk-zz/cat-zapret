@@ -26,6 +26,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from .applog import get_logger
+
+_log = get_logger("zapret-update")
+
 try:
     import requests
 except ImportError:  # pragma: no cover
@@ -66,7 +70,8 @@ def _run_quiet(args) -> None:
             timeout=5,
         )
     except Exception:
-        pass
+        # Best-effort helper command; the update itself can still succeed.
+        _log.warning("helper command failed", exc_info=True)
 
 
 def _release_windivert_locks() -> None:
@@ -158,7 +163,12 @@ def save_local_version(zapret_dir: Path, tag: str) -> None:
     try:
         (zapret_dir / INSTALLED_MARKER).write_text(_norm(tag), encoding="utf-8")
     except OSError:
-        pass
+        # Without this marker the same update is offered again next time.
+        _log.warning(
+            "could not record the installed strategy version in %s",
+            zapret_dir / INSTALLED_MARKER,
+            exc_info=True,
+        )
 
 
 def latest_release(timeout: float = 10.0) -> Optional[ReleaseInfo]:
@@ -440,7 +450,9 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
         from . import strategy_catalog
         strategy_catalog.rebuild_from_bats(zapret_dir, delete_bats=True)
     except Exception:
-        pass
+        # The files are updated but the strategy list may look unchanged --
+        # exactly the kind of failure users report as "nothing happened".
+        _log.error("could not rebuild the strategy catalog after the update", exc_info=True)
 
     # Record the version so the same update isn't offered again.
     save_local_version(zapret_dir, rel.tag)

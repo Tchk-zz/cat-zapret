@@ -22,6 +22,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional
 
+from .applog import get_logger
+
+_log = get_logger("lists")
+
 try:
     import requests
 except ImportError:  # pragma: no cover
@@ -239,7 +243,8 @@ def load_hosts_template(
             if normalize_hosts_lines(text):
                 return text
     except OSError:
-        pass
+        # Cached hosts snippet unreadable; we fall back to the network below.
+        _log.warning("could not read the cached hosts file %s", local, exc_info=True)
 
     if allow_network and requests is not None:
         try:
@@ -255,10 +260,14 @@ def load_hosts_template(
                     local.parent.mkdir(parents=True, exist_ok=True)
                     local.write_text(text, encoding="utf-8")
                 except OSError:
-                    pass
+                    # Caching is optional: the snippet is still returned.
+                    _log.warning(
+                        "could not cache the hosts snippet in %s", local, exc_info=True
+                    )
                 return text
         except Exception:
-            pass
+            # No network / GitHub unreachable: the caller reports "no data".
+            _log.warning("could not download the hosts snippet", exc_info=True)
     return ""
 
 
