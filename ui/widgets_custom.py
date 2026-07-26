@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from .effects import apply_effect
 from .i18n import tr_text
 from .paths import asset_path
 
@@ -235,7 +236,7 @@ class _GlassNav(QFrame):
         self._glow.setBlurRadius(self._base_blur)
         self._glow.setOffset(0, 0)
         self._glow.setColor(QColor(150, 120, 255, 180))
-        self._indicator.setGraphicsEffect(self._glow)
+        apply_effect(self._indicator, self._glow)
 
         lay = QHBoxLayout(self)
         lay.setContentsMargins(7, 7, 7, 7)  # uniform inset around the pills
@@ -357,7 +358,7 @@ class BypassTestPopup(QDialog):
         shadow.setBlurRadius(28)
         shadow.setOffset(0, 0)
         shadow.setColor(QColor(0, 0, 0, 80 if self._light_theme else 150) if self._neutral_theme else QColor(219, 96, 255, 170))
-        self.card.setGraphicsEffect(shadow)
+        apply_effect(self.card, shadow)
         root.addWidget(self.card)
 
         lay = QVBoxLayout(self.card)
@@ -667,7 +668,7 @@ class StyledPopup(QDialog):
         shadow.setBlurRadius(28)
         shadow.setOffset(0, 0)
         shadow.setColor(QColor(0, 0, 0, 80 if self._light_theme else 150) if self._neutral_theme else QColor(219, 96, 255, 170))
-        self.card.setGraphicsEffect(shadow)
+        apply_effect(self.card, shadow)
         root.addWidget(self.card)
 
         self.lay = QVBoxLayout(self.card)
@@ -1329,7 +1330,7 @@ class _HomeAutoSelectPanel(_Dark3DPanel):
         percent_glow.setOffset(0, 0)
         percent_glow.setBlurRadius(18)
         percent_glow.setColor(QColor(220, 225, 245, 165))
-        self.percent.setGraphicsEffect(percent_glow)
+        apply_effect(self.percent, percent_glow)
         header.addWidget(self.percent)
         lay.addLayout(header)
 

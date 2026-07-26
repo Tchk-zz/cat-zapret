@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app import autostart
+from .effects import apply_effect
 from .paths import asset_path
 from .widgets_custom import (  # noqa: E402
     _SettingsRow,
@@ -46,7 +47,7 @@ class SettingsTabMixin:
         card_shadow.setBlurRadius(34)
         card_shadow.setOffset(0, 8)
         card_shadow.setColor(QColor(0, 0, 0, 95))
-        card.setGraphicsEffect(card_shadow)
+        apply_effect(card, card_shadow)
         card_lay = QVBoxLayout(card)
         # Reduced card margins (was 54/28/54/30) to save vertical space.
         card_lay.setContentsMargins(48, 18, 48, 18)

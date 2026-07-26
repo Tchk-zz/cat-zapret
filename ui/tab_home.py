@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 
 from app.config import default_data_dir
 from app import tg_proxy
+from .effects import apply_effect
 from .paths import asset_path
 from .waiting_runner_game import WaitingRunnerGame
 from .widgets_custom import (  # noqa: E402
@@ -64,7 +65,7 @@ class HomeTabMixin:
         self._glow.setOffset(0, 0)
         self._glow.setColor(QColor(150, 90, 240))
         self._glow.setBlurRadius(26)
-        self.btn_toggle.setGraphicsEffect(self._glow)
+        self._glow_installed = apply_effect(self.btn_toggle, self._glow)
         self._glow_anim = QPropertyAnimation(self._glow, b"blurRadius", self)
         self._glow_anim.setDuration(1400)
         self._glow_anim.setStartValue(24)
@@ -99,7 +100,7 @@ class HomeTabMixin:
         _pill_shadow.setBlurRadius(24)
         _pill_shadow.setOffset(0, 2)
         _pill_shadow.setColor(QColor(0, 0, 0, 95))
-        self.status_pill.setGraphicsEffect(_pill_shadow)
+        apply_effect(self.status_pill, _pill_shadow)
         pill = QHBoxLayout(self.status_pill)
         pill.setContentsMargins(14, 6, 18, 6)
         pill.setSpacing(4)

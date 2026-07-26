@@ -7,14 +7,14 @@ from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtCore import (
-    Qt, QThread, QTimer, QPropertyAnimation, QEasingCurve, pyqtSignal,
+    Qt, QThread, QTimer, QPropertyAnimation, pyqtSignal,
     QPoint, QSize,
 )
 from PyQt6.QtGui import (
     QColor, QIcon, QPixmap,
 )
 from PyQt6.QtWidgets import (
-    QApplication, QCheckBox, QFileDialog, QFrame, QGraphicsDropShadowEffect, QGraphicsOpacityEffect,
+    QApplication, QCheckBox, QFileDialog, QFrame, QGraphicsDropShadowEffect,
     QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QMainWindow, QMessageBox, QDialog,
     QPlainTextEdit, QPushButton, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
@@ -27,6 +27,7 @@ from app.process_runner import ProcessRunner
 from app.service_manager import ServiceManager
 from app.strategy_manager import Strategy, StrategyManager
 from app import tg_proxy
+from .effects import apply_effect, effects_supported
 from .paths import asset_path
 from .tab_games import GamesTabMixin
 from .tab_home import HomeTabMixin
@@ -565,16 +566,21 @@ class MainWindow(
             w = self.tabs.widget(index)
             if w is None:
                 return
-            eff = QGraphicsOpacityEffect(w)
-            w.setGraphicsEffect(eff)
-            anim = QPropertyAnimation(eff, b"opacity", self)
-            anim.setDuration(220)
-            anim.setStartValue(0.0)
-            anim.setEndValue(1.0)
-            anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-            anim.finished.connect(lambda: w.setGraphicsEffect(None))
-            self._tab_fade_anim = anim
-            anim.start()
+            # No opacity effect here on purpose. QGraphicsOpacityEffect renders
+            # the whole page into an offscreen pixmap; with the fractional
+            # QT_SCALE_FACTOR that main.py sets (plus PassThrough rounding)
+            # every glyph gets re-snapped to that pixmap grid and snaps back
+            # once the effect is removed -- that is the "text jumps a couple of
+            # pixels and returns" flicker seen on every tab switch. The same
+            # offscreen pass also flattens the drop-shadow / glow effects of
+            # child widgets while it is alive.
+            anim = getattr(self, "_tab_fade_anim", None)
+            if anim is not None:
+                anim.stop()
+                self._tab_fade_anim = None
+            if w.graphicsEffect() is not None:
+                w.setGraphicsEffect(None)
+            w.update()
         except Exception:
             pass
 
@@ -1826,7 +1832,7 @@ class MainWindow(
                     shadow.setBlurRadius(34)
                     shadow.setOffset(0, 9)
                     shadow.setColor(QColor(0, 0, 0, 165))
-                    home_surface.setGraphicsEffect(shadow)
+                    apply_effect(home_surface, shadow)
             elif home_surface.graphicsEffect() is not None:
                 home_surface.setGraphicsEffect(None)
         if hasattr(self, "home_auto_panel"):
@@ -1885,7 +1891,7 @@ class MainWindow(
                 card_shadow.setBlurRadius(34)
                 card_shadow.setOffset(0, 8)
                 card_shadow.setColor(QColor(0, 0, 0, 95))
-                self.settings_card.setGraphicsEffect(card_shadow)
+                apply_effect(self.settings_card, card_shadow)
         if hasattr(self, "status_pill"):
             if is_neutral:
                 self.status_pill.setGraphicsEffect(None)
@@ -1894,7 +1900,7 @@ class MainWindow(
                 pill_shadow.setBlurRadius(24)
                 pill_shadow.setOffset(0, 2)
                 pill_shadow.setColor(QColor(0, 0, 0, 95))
-                self.status_pill.setGraphicsEffect(pill_shadow)
+                apply_effect(self.status_pill, pill_shadow)
         # Neutral themes (dark/light) remove decorative cats and action icons.
         # Image themes + purple keep them.
         show_decor = not is_neutral
@@ -2034,6 +2040,10 @@ class MainWindow(
             self._stop_glow()
 
     def _start_glow(self) -> None:
+        # Nothing is installed on the button when the UI runs at a scale below
+        # 1 (see ui/effects.py), so driving the animations would only burn CPU.
+        if not effects_supported():
+            return
         if hasattr(self, "_glow"):
             self._glow.setColor(QColor(70, 220, 130))
         if hasattr(self, "_glow_anim") and self._glow_anim.state() != QPropertyAnimation.State.Running:
