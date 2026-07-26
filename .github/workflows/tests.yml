@@ -24,10 +24,14 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v4
 
+      # Must match the Python used for local development (currently 3.14).
+      # With 3.13 here the suite ran on a different interpreter than the one
+      # the release exe is built with, so a break could show up in only one
+      # of the two places.
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.14"
           cache: pip
 
       - name: Install dependencies
@@ -35,10 +39,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
-      # tools/check_lint.py wraps pyflakes: it ignores the three deliberate,
-      # permanent findings (vendored star imports + the import-proof line in
-      # tests/test_core_logic.py) and fails on anything new. Calling pyflakes
-      # directly would keep CI permanently red.
+      # tools/check_lint.py wraps pyflakes: it skips the vendored
+      # app/tg_proxy_engine/ package, ignores the single import-proof line in
+      # tests/test_core_logic.py and fails on everything else. Calling pyflakes
+      # directly would keep CI permanently red because of the vendored code.
       - name: Static analysis (pyflakes)
         run: python tools/check_lint.py
 
