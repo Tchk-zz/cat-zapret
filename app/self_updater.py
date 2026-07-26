@@ -129,6 +129,10 @@ def latest_release(timeout: float = 10.0) -> Optional[AppRelease]:
         resp.raise_for_status()
         data = resp.json()
     except Exception:
+        # No network, GitHub down or rate limited. The UI only says "the check
+        # failed", so record the real reason in the log file.
+        from .applog import get_logger
+        get_logger("update").warning("update check failed", exc_info=True)
         return None
 
     tag = data.get("tag_name", "")

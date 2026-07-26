@@ -125,6 +125,14 @@ class AppConfig:
         try:
             data: Dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
+            # Corrupted or unreadable file: fall back to defaults, but leave a
+            # trace -- otherwise the user just sees all settings reset.
+            from .applog import get_logger
+            get_logger("config").warning(
+                "could not read settings from %s, using defaults",
+                path,
+                exc_info=True,
+            )
             return cls()
         known = {f for f in cls.__dataclass_fields__}  # type: ignore[attr-defined]
         clean = {k: v for k, v in data.items() if k in known}
@@ -138,7 +146,11 @@ class AppConfig:
                 encoding="utf-8",
             )
         except OSError:
-            pass
+            # Settings are lost for this session but the app must keep running.
+            from .applog import get_logger
+            get_logger("config").warning(
+                "could not save settings to %s", config_path(), exc_info=True
+            )
 
     def resolve_zapret_dir(self) -> Optional[Path]:
         """Return the zapret folder, auto-detecting it if not configured."""

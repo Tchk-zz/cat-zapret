@@ -13,7 +13,10 @@ import threading
 from pathlib import Path
 from typing import Callable, Deque, List, Optional
 
+from .applog import get_logger
 from .strategy_manager import Strategy
+
+_log = get_logger("engine")
 
 IS_WINDOWS = sys.platform.startswith("win")
 # CREATE_NO_WINDOW keeps the console hidden in the packaged app.
@@ -63,10 +66,14 @@ class ProcessRunner:
             return self._current
 
     def log(self, msg: str) -> None:
+        # Everything the engine says also goes to the log file, so a failed
+        # start can be diagnosed after the app has been closed.
+        _log.info("%s", msg)
         try:
             self._log_cb(msg)
         except Exception:
-            pass
+            # The on-screen log view is gone (window closing): not fatal.
+            _log.warning("log callback failed", exc_info=True)
 
     def last_output(self) -> str:
         return "\n".join(self._tail).strip()
@@ -138,7 +145,8 @@ class ProcessRunner:
                         self._tail.append(line)
                         self.log(line)
             except Exception:
-                pass
+                # The pipe died (engine killed, handle closed on shutdown).
+                _log.warning("stopped reading winws output", exc_info=True)
             # The stream closed => the process is exiting. Capture the code.
             code = proc.poll()
             if code is None:

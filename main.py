@@ -176,6 +176,14 @@ def main() -> int:
     from app.config import AppConfig
     from ui.main_window import MainWindow
 
+    # Start the log file first: everything below may fail silently, and the
+    # journal is the only way to find out why afterwards.
+    import app as app_pkg
+    from app import applog
+    applog.setup()
+    applog.log_startup(app_pkg.__version__)
+    _log = applog.get_logger("start")
+
     # Safety net: in PyQt6 an unhandled exception in any slot/worker aborts the
     # whole process (the app "just closes"). Route exceptions to a log + dialog
     # instead so the window stays open.
@@ -183,6 +191,10 @@ def main() -> int:
 
     def _excepthook(exc_type, exc_value, exc_tb):
         text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        try:
+            _log.error("unhandled exception:\n%s", text)
+        except Exception:
+            pass
         try:
             from app.config import default_data_dir
             log_path = default_data_dir() / "crash.log"
