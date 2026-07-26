@@ -26,7 +26,7 @@ python -m pytest tests/ -q
 
 - `check_lint.py` печатает `pyflakes: clean (1 known finding ignored, ... files checked)`.
   Единственное разрешённое замечание — строка `import app.tg_proxy  # noqa: F401`
-  в `tests/test_core_logic.py`. Вендорная папка `app/tg_proxy_engine/` не
+  в `tests/test_tg_proxy_logic.py`. Вендорная папка `app/tg_proxy_engine/` не
   проверяется вообще.
 - pytest: все тесты проходят (`... passed`).
 
