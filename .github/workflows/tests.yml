@@ -1,0 +1,48 @@
+# Automatic checks for every push and pull request on main.
+#
+# Why windows-latest: ZapretGUI is a Windows-only app (pywin32, WinDivert,
+# taskkill/schtasks handling). Running the suite on Linux would silently skip
+# the platform-specific code paths that actually broke in the past.
+#
+# Qt runs headless via QT_QPA_PLATFORM=offscreen, which tests/conftest.py
+# already sets, so no display is required on the runner.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      # tools/check_lint.py wraps pyflakes: it ignores the three deliberate,
+      # permanent findings (vendored star imports + the import-proof line in
+      # tests/test_core_logic.py) and fails on anything new. Calling pyflakes
+      # directly would keep CI permanently red.
+      - name: Static analysis (pyflakes)
+        run: python tools/check_lint.py
+
+      - name: Run tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest tests/ -q --no-header
