@@ -79,8 +79,8 @@ def local_version() -> str:
     """Read the VERSION file bundled with the running app.
 
     NOTE: installer.iss MUST ship VERSION next to the exe. If it is missing,
-    this returns "" and update_available() can never conclude "up to date",
-    so the user would be nagged about the same release forever.
+    this returns "" -- check_update() then reports "error" instead of offering
+    the same release forever (see the comment there).
     """
     if getattr(sys, "frozen", False):
         # Frozen exe: VERSION is next to the executable.
@@ -167,13 +167,22 @@ def check_update() -> tuple:
     * ``("update", release)``  -- a newer release is available.
     * ``("uptodate", None)``   -- the installed version is current.
     * ``("error", None)``      -- the check itself failed (no network, GitHub
-      down, rate limited, no installer asset in the latest release).
+      down, rate limited, no installer asset in the latest release, or the
+      local version is unknown).
     """
     rel = latest_release()
     if rel is None:
         return ("error", None)
     cur = local_version()
-    if cur and _norm(rel.tag) <= _norm(cur):
+    if not cur:
+        # VERSION is missing next to the exe (broken installer / manual copy).
+        # This used to fall through to ("update", rel), so the app offered the
+        # very same release over and over: an empty local version can never
+        # compare as up to date, and reinstalling did not create the missing
+        # file either. Reporting an error makes the UI say "the check failed"
+        # instead of walking the user through the installer forever.
+        return ("error", None)
+    if _norm(rel.tag) <= _norm(cur):
         return ("uptodate", None)
     return ("update", rel)
 
@@ -276,6 +285,7 @@ def download_and_launch(
     digest = hashlib.sha256()
     downloaded = 0
     last_pct = -1
+    cancelled = False
     try:
         tmp = tempfile.NamedTemporaryFile(
             delete=False,
@@ -286,9 +296,13 @@ def download_and_launch(
         with tmp:
             for chunk in resp.iter_content(chunk_size=65536):
                 if _cancelled():
-                    _discard(tmp_path)
-                    _report("Загрузка обновления отменена.")
-                    return "cancelled"
+                    # Only leave the loop here. Windows refuses to delete a
+                    # file that is still open, so discarding it inside the
+                    # `with` block silently failed and left a partial ~55 MB
+                    # installer in %TEMP% forever (covered by
+                    # tests/test_self_updater.py).
+                    cancelled = True
+                    break
                 if not chunk:
                     continue
                 tmp.write(chunk)
@@ -305,6 +319,12 @@ def download_and_launch(
         return "Ошибка сохранения: " + str(exc)
     finally:
         resp.close()
+
+    if cancelled:
+        # The file is closed by now, so this delete actually succeeds.
+        _discard(tmp_path)
+        _report("Загрузка обновления отменена.")
+        return "cancelled"
 
     # Verify the download before executing it. The installer runs elevated, so
     # a truncated download or a tampered mirror would be executed with admin
