@@ -103,6 +103,13 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 [Run]
 ; Launch the app after install (optional, postinstall checkbox).
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent; Check: NotWizardSilent
+; Silent self-update relaunch: app/self_updater.py runs this installer with
+; /VERYSILENT so no wizard window ever appears. Without an explicit Run entry
+; the app would just vanish and never come back, because the entry above is
+; always skipped by "skipifsilent". This one is the mirror image of it: it
+; only fires in silent mode, so an interactive/manual install still behaves
+; exactly as before (single launch, governed by the postinstall checkbox).
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: WizardSilent
 
 [Code]
 // Inno Setup's [Run] section quoting is fragile for complex commands like

@@ -8,7 +8,9 @@ both of which download something from GitHub on a worker thread:
   running engine and the service first, because Windows keeps replaced files
   locked, and restarts them only after a clearly successful update.
 * **application self-update** -- checks for a newer Zapret GUI installer and
-  runs it (``_check_app_update_silent`` ... ``_on_app_download_finished``).
+  installs it silently in the background (``_check_app_update_silent`` ...
+  ``_on_app_download_finished``); once the installer relaunches the app,
+  ``_check_pending_update_changelog`` shows a "what's new" popup.
 * **domain list updates** -- refreshes the domain lists the engine filters on
   (``_toggle_auto_update_lists`` ... ``_on_lists_update_finished``), either
   automatically a few seconds after launch or on demand from the settings tab.
@@ -35,6 +37,7 @@ from PyQt6.QtWidgets import QMessageBox
 
 from app import list_manager
 
+from .widgets_popups import StyledPopup
 from .workers import (
     AppSelfUpdateDownloadWorker,
     AppSelfUpdateWorker,
@@ -287,10 +290,11 @@ class UpdateFlowMixin:
         if msg == "ok":
             QMessageBox.information(
                 self,
-                self._msg_title("\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435 \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u044f"),
+                self._msg_title("Обновление приложения"),
                 self._msg_text(
-                    "\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u0449\u0438\u043a \u0437\u0430\u043f\u0443\u0449\u0435\u043d. \u041f\u0440\u043e\u0439\u0434\u0438\u0442\u0435 \u0448\u0430\u0433\u0438 \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0438 \u0432 \u043e\u0442\u043a\u0440\u044b\u0432\u0448\u0435\u043c\u0441\u044f \u043e\u043a\u043d\u0435.\n\n"
-                    "\u041f\u043e\u0441\u043b\u0435 \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0438 \u043f\u0435\u0440\u0435\u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u0435 \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435."
+                    "Установка запущена в фоновом режиме, без окон и лишних кликов.\n\n"
+                    "Приложение автоматически перезапустится через несколько секунд, "
+                    "и появится окно со списком изменений."
                 ),
             )
         else:
@@ -299,6 +303,28 @@ class UpdateFlowMixin:
                 self._msg_title("\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435 \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u044f"),
                 self._msg_text(msg),
             )
+
+    def _check_pending_update_changelog(self) -> None:
+        """Show a "что нового" popup right after a silent self-update.
+
+        Runs once, very early in ``MainWindow.__init__``. If
+        ``app.self_updater.download_and_launch`` just ran a silent installer,
+        installer.iss relaunches ZapretGUI.exe on its own -- this is that
+        fresh process's only chance to explain what changed, since the
+        installer itself never showed a single window.
+        """
+        from app.self_updater import take_pending_changelog
+        info = take_pending_changelog()
+        if not info:
+            return
+        version = str(info.get("version") or info.get("tag") or "?")
+        notes = str(info.get("notes") or "").strip()
+        if not notes:
+            notes = "Список изменений для этой версии не опубликован."
+        popup = StyledPopup(
+            f"Обновлено до версии {version}", notes, self, ok_text="Отлично!"
+        )
+        popup.exec()
 
     # --------------------------------------------------- domain list updates
 

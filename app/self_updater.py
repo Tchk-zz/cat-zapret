@@ -15,6 +15,7 @@ Flow:
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -48,6 +49,9 @@ class AppRelease:
     download_url: str
     size: int          # bytes
     sha256: str = ""   # lowercase hex digest published by GitHub, "" if absent
+    # Release description from GitHub (Markdown). Shown to the user in the
+    # "what's new" popup after a silent self-update relaunches the app.
+    notes: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +151,7 @@ def latest_release(timeout: float = 10.0) -> Optional[AppRelease]:
                 download_url=asset["browser_download_url"],
                 size=asset.get("size", 0),
                 sha256=_parse_digest(asset),
+                notes=str(data.get("body") or "").strip(),
             )
     return None
 
@@ -224,6 +229,61 @@ def _discard(path: str) -> None:
         os.unlink(path)
     except OSError:
         pass
+
+
+_PENDING_CHANGELOG_NAME = "pending_update.json"
+
+
+def pending_changelog_path() -> Path:
+    """Location of the marker the silently-relaunched app reads on startup."""
+    from .config import default_data_dir
+    return default_data_dir() / _PENDING_CHANGELOG_NAME
+
+
+def _write_pending_changelog(release: "AppRelease") -> None:
+    """Best-effort: record what changed so the next launch can show it.
+
+    A silent install (/VERYSILENT) shows no window at all, so without this
+    the user would have no idea anything happened beyond the app briefly
+    disappearing and reappearing. installer.iss relaunches ZapretGUI.exe
+    right after the silent install finishes; that fresh process reads this
+    file once via take_pending_changelog() and shows a popup.
+    """
+    try:
+        path = pending_changelog_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {"version": release.version, "tag": release.tag, "notes": release.notes},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+    except Exception:
+        # Never let this convenience feature block the actual update.
+        pass
+
+
+def take_pending_changelog() -> Optional[dict]:
+    """Read and delete the pending "what's new" marker, if any.
+
+    Returns a dict with "version" / "tag" / "notes" keys, or None on a normal
+    launch where no silent update just happened. The file is removed either
+    way so a corrupted marker can never re-show the popup forever.
+    """
+    path = pending_changelog_path()
+    data = None
+    try:
+        if path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        data = None
+    finally:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    return data if isinstance(data, dict) else None
 
 
 def download_and_launch(
@@ -356,7 +416,11 @@ def download_and_launch(
         )
 
     _pct(100)
-    _report(f"Загружено {downloaded // 1024 // 1024} МБ. Запускаю установщик...")
+    _report(f"Загружено {downloaded // 1024 // 1024} МБ. Устанавливаю без окон...")
+
+    # Leave a note for the next launch so it can show a "что нового" popup --
+    # a silent install has no UI of its own to tell the user anything changed.
+    _write_pending_changelog(release)
 
     # The installer must NOT stay a child of this process. Setup closes the
     # running ZapretGUI.exe with taskkill before copying files; any variant of
@@ -365,6 +429,13 @@ def download_and_launch(
     # break the parent/child link, it only detaches the console). Launching
     # through `cmd /c start` inserts a throwaway cmd that exits immediately, so
     # Setup is orphaned and survives whatever happens to this process.
+    #
+    # /VERYSILENT /SUPPRESSMSG /NORESTART run the whole Inno Setup wizard in
+    # the background: no window, no clicks, no "installation complete"
+    # message box. installer.iss then relaunches ZapretGUI.exe itself once
+    # the silent install finishes (its Run entry guarded by WizardSilent), so
+    # the app reappears on its own with the changelog popup above.
+    silent_args = ["/VERYSILENT", "/SUPPRESSMSG", "/NORESTART"]
     try:
         kwargs: dict = {}
         if sys.platform == "win32":
@@ -375,10 +446,11 @@ def download_and_launch(
             # The empty "" is the window title argument of `start`; without it
             # a quoted path would be taken as the title and nothing would run.
             subprocess.Popen(
-                ["cmd", "/c", "start", "", tmp_path], shell=False, **kwargs
+                ["cmd", "/c", "start", "", tmp_path] + silent_args,
+                shell=False, **kwargs
             )
         else:
-            subprocess.Popen([tmp_path], **kwargs)
+            subprocess.Popen([tmp_path] + silent_args, **kwargs)
     except Exception as exc:
         _discard(tmp_path)
         return "Ошибка запуска установщика: " + str(exc)

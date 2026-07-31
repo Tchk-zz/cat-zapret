@@ -236,6 +236,10 @@ class MainWindow(
         self._apply_language()
         self._apply_theme()
 
+        # If a silent self-update just relaunched us, show what changed --
+        # the installer itself never displayed a single window for this.
+        QTimer.singleShot(400, self._check_pending_update_changelog)
+
         # Extract bundled zapret files on first run, then refresh the list.
         QTimer.singleShot(0, self._ensure_ready)
         # If the user previously enabled the Telegram proxy, kick off the
