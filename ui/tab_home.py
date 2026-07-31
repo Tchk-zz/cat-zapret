@@ -50,8 +50,8 @@ class HomeTabMixin:
         self.home_body = QWidget()
         self.home_body.setObjectName("homeBody")
         outer.addWidget(self.home_body)
-        self._home_layout_is_dark = None
-        self._apply_home_layout(getattr(self, "current_theme", "purple") == "dark")
+        self._home_layout_built = False
+        self._apply_home_layout()
         return w
 
     def _create_home_widgets(self, w: QWidget) -> None:
@@ -453,79 +453,31 @@ class HomeTabMixin:
             if sub is not None:
                 self._detach_home_widgets(sub)
 
-    def _apply_home_layout(self, dark: bool) -> None:
-        dark = bool(dark)
+    def _apply_home_layout(self, dark: bool = True) -> None:
+        """Build the home page. Every theme uses the SAME arrangement.
+
+        The layout used to be theme-dependent: a modern arrangement for the
+        dark preset and an older "classic" one for every other theme. That is
+        why non-dark themes looked broken -- the classic arrangement hid the
+        mascot, the Telegram/Zapret cards, the auto-select block and the
+        mini-game, and fell back to the legacy log panel. A theme must only
+        change colors and the background image, never the arrangement, so
+        there is exactly one layout now.
+
+        ``dark`` is kept for call-site compatibility and is ignored.
+        """
         if not hasattr(self, "home_body"):
             return
-        if getattr(self, "_home_layout_is_dark", None) == dark:
+        if getattr(self, "_home_layout_built", False):
             return
         old = self.home_body.layout()
         if old is not None:
             self._detach_home_widgets(old)
             QWidget().setLayout(old)
-        if dark:
-            self._arrange_home_dark()
-        else:
-            self._arrange_home_classic()
-        self._home_layout_is_dark = dark
+        self._arrange_home()
+        self._home_layout_built = True
 
-    def _arrange_home_classic(self) -> None:
-        park = self._home_parking()
-        self.home_cat.setVisible(False)
-        self.home_cat.setParent(park)
-        self.home_log.setVisible(True)
-        self.run_title.setText("Запущенная стратегия:")
-        self.run_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        if hasattr(self, "home_tg_card"):
-            self.home_tg_card.setVisible(False)
-            self.home_tg_card.setParent(park)
-        if hasattr(self, "home_zap_card"):
-            self.home_zap_card.setVisible(False)
-            self.home_zap_card.setParent(park)
-        if hasattr(self, "home_auto_stack"):
-            self.home_auto_stack.setVisible(False)
-            self.home_auto_stack.setParent(park)
-        if hasattr(self, "waiting_runner_game"):
-            self.waiting_runner_game.set_searching(False)
-        self.run_box.setVisible(True)
-        if hasattr(self, "_set_action_deco"):
-            self._set_action_deco(False)
-        self.btn_toggle.setStyleSheet("")
-        self.btn_toggle.setMinimumSize(0, 0)
-        self.btn_toggle.setMaximumSize(16777215, 16777215)
-        root = QVBoxLayout(self.home_body)
-        root.setContentsMargins(28, 22, 28, 30)
-        root.setSpacing(14)
-        root.addStretch(2)
-        power_row = QHBoxLayout()
-        power_row.addStretch(1)
-        power_row.addWidget(self.btn_toggle)
-        power_row.addStretch(1)
-        root.addLayout(power_row)
-        pill_row = QHBoxLayout()
-        pill_row.addStretch(1)
-        pill_row.addWidget(self.status_pill)
-        pill_row.addStretch(1)
-        root.addLayout(pill_row)
-        root.addStretch(2)
-        bottom = QHBoxLayout()
-        bottom.setSpacing(16)
-        left = QVBoxLayout()
-        left.setSpacing(12)
-        left.setContentsMargins(12, 0, 0, 0)
-        left.addWidget(self.btn_auto)
-        left.addWidget(self.btn_auto_cancel)
-        left.addStretch(1)
-        left.addWidget(self.btn_check)
-        bottom.addLayout(left, 0)
-        bottom.addWidget(self.run_box, 1)
-        root.addSpacing(96)
-        root.addLayout(bottom, 2)
-        root.addWidget(self.progress)
-        root.addWidget(self.progress_label)
-        root.addStretch(1)
-
-    def _arrange_home_dark(self) -> None:
+    def _arrange_home(self) -> None:
         self.home_log.setVisible(False)
         auto_active = self._auto_thread is not None
         if hasattr(self, "home_tg_card"):

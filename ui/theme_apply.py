@@ -107,10 +107,10 @@ class ThemeApplyMixin:
         }
         full_qss = get_theme_qss(theme_id, base_qss)
         self.setStyleSheet(full_qss)
-        # Swap the home-tab layout: dark theme uses its own arrangement,
-        # purple/light keep the original classic layout.
+        # The arrangement is theme-independent: every theme uses the very same
+        # home layout and only colors and the background image change.
         if hasattr(self, "home_body"):
-            self._apply_home_layout(is_dark_preset)
+            self._apply_home_layout()
         # --- Raised 3D home surfaces (dark preset only) ---
         for home_surface in (
             getattr(self, "home_tg_card", None),
