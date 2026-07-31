@@ -229,8 +229,15 @@ class DownloadAndLaunchTests(unittest.TestCase):
         stub = _FakeRequests(response, error=download_error)
         statuses = []
         with tempfile.TemporaryDirectory() as td:
+            # download_and_launch() also drops a "what's new" marker file next
+            # to the real per-user data dir; redirect it into the same
+            # throwaway folder so these tests never touch a real machine's
+            # %LOCALAPPDATA%\ZapretGUI (that previously leaked a bogus
+            # "updated to 9.9.9" popup into a real running app).
+            changelog_path = Path(td) / "pending_update.json"
             with mock.patch.object(su.tempfile, "gettempdir", return_value=td), \
                     mock.patch.object(su, "_requests", stub), \
+                    mock.patch.object(su, "pending_changelog_path", return_value=changelog_path), \
                     mock.patch.object(su.subprocess, "Popen") as popen:
                 if popen_error is not None:
                     popen.side_effect = popen_error
@@ -301,8 +308,10 @@ class DownloadAndLaunchTests(unittest.TestCase):
         )
         seen = []
         with tempfile.TemporaryDirectory() as td:
+            changelog_path = Path(td) / "pending_update.json"
             with mock.patch.object(su.tempfile, "gettempdir", return_value=td), \
                     mock.patch.object(su, "_requests", stub), \
+                    mock.patch.object(su, "pending_changelog_path", return_value=changelog_path), \
                     mock.patch.object(su.subprocess, "Popen"):
                 su.download_and_launch(rel, on_progress=seen.append)
         self.assertTrue(seen)
