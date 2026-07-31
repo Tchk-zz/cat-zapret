@@ -14,7 +14,8 @@
 - **Редактор** своих стратегий и списков доменов / ipset.
 - **Telegram MTProto-прокси** — движок `tg-ws-proxy` (от того же Flowseal) **встроен прямо в приложение как Python-модуль** — никакого отдельного процесса и второй иконки в трее. Отдельный таб с тумблером, статусом, кнопками «Скопировать ссылку» / «Открыть в Telegram» и опцией автозапуска вместе с zapret.
 - **Пресеты игр и сервисов** — выборочно применять обход к Roblox, Steam, Epic Games, Battle.net, FACEIT, SoundCloud (с полным списком API + media + CDN доменов) или наоборот исключить их. Свои домены — через запятую.
-- **10 тем оформления** — 3 классические (Фиолетовая / Тёмная / Светлая) + 7 новых с фоновыми изображениями (Туман, Лазурь, Снег, Лаванда, Дымка, Песок, Полночь). Выбор через dropdown-меню в Настройках; каждая тема подбирает цвета карточек, текста и акцентов под свой фон.
+- **10 тем оформления** — 3 классические (Фиолетовая / Тёмная / Светлая) + 7 новых с фоновыми изображениями (Туман, Лазурь, Снег, Лаванда, Дымка, Песок, Полночь). Выбор через dropdown-меню в Настройках; каждая тема подбирает цвета карточек, текста и акцентов под свой фон. Расположение элементов одинаковое во всех темах (эталон — Тёмная); визуальная унификация части второстепенных элементов ещё продолжается.
+- **Логирование** — диагностика (в т.ч. Telegram-прокси) пишется в файл `%LOCALAPPDATA%\ZapretGUI\logs\zapret-gui.log` с ротацией, что упрощает разбор проблем без пересборки приложения.
 
 ## Размещение
 
@@ -92,48 +93,60 @@ pyinstaller zapret-gui.spec --noconfirm
 zapret-gui/
   main.py                 — точка входа, UAC/админ
   requirements.txt
-  build.bat / zapret-gui.spec
+  build.bat / zapret-gui.spec / installer.iss
+  VERSION                 — текущая версия (читается самообновлением и сборкой установщика)
   app/
-    config.py             — настройки + автопоиск папки zapret
-    bootstrap.py          — первичная установка движка и встроенные стратегии
-    strategy_manager.py   — разбор .bat в стратегии
-    strategy_catalog.py   — каталог стратегий (замена .bat-файлам)
-    process_runner.py     — запуск/остановка winws.exe
-    connectivity.py       — проверка доступа YouTube/Discord
-    auto_selector.py      — логика автоподбора
-    list_manager.py       — списки доменов (list-*.txt)
-    exclusions.py         — исключения из обхода
-    service_manager.py    — служба Windows
-    autostart.py          — автозапуск
-    updater.py            — обновление стратегий с GitHub
-    editor.py             — валидация редактора
-    tg_proxy.py           — Telegram MTProto-прокси (tg-ws-proxy)
-    tg_proxy_engine/      — встроенный движок tg-ws-proxy (upstream, MIT)
-    self_updater.py       — самообновление с GitHub Releases + SHA-256
+    applog.py              — ротируемый файловый лог (%LOCALAPPDATA%\ZapretGUI\logs\zapret-gui.log)
+    config.py              — настройки + автопоиск папки zapret
+    bootstrap.py           — первичная установка движка и встроенные стратегии
+    strategy_manager.py    — разбор .bat в стратегии
+    strategy_catalog.py    — каталог стратегий (замена .bat-файлам)
+    process_runner.py      — запуск/остановка winws.exe
+    connectivity.py        — проверка доступа YouTube/Discord
+    auto_selector.py       — логика автоподбора
+    list_manager.py        — списки доменов (list-*.txt) и HOSTS-блок
+    exclusions.py          — исключения из обхода
+    service_manager.py     — служба Windows
+    autostart.py           — автозапуск
+    updater.py             — обновление стратегий с GitHub
+    editor.py              — валидация редактора
+    tg_proxy.py            — Telegram MTProto-прокси (tg-ws-proxy)
+    tg_proxy_engine/       — встроенный движок tg-ws-proxy (upstream, MIT)
+    self_updater.py        — самообновление с GitHub Releases + SHA-256
   ui/
-    main_window.py        — главное окно (сборка вкладок из миксинов)
-    tab_home.py           — вкладка «Главная»
-    tab_strategy.py       — вкладка стратегий
-    tab_games.py          — вкладка игр и сервисов
-    tab_telegram.py       — вкладка Telegram-прокси
-    tab_settings.py       — вкладка настроек
-    tray.py               — иконка в трее
-    workers.py            — фоновые потоки (QThread-воркеры)
-    theme.py              — применение тем и шрифтов
-    qss.py                — таблицы стилей (QSS) для тем
-    themes_catalog.py     — каталог из 10 тем оформления
-    widgets_custom.py     — кастомные виджеты и попапы
-    i18n.py               — русский/английский перевод интерфейса
+    main_window.py         — главное окно (сборка вкладок из миксинов)
+    auto_select_flow.py    — миксин автоподбора стратегии (UI-часть)
+    editor_flow.py         — миксин редактора стратегий и списков доменов/HOSTS
+    update_flow.py         — миксин обновления приложения и списков
+    theme_apply.py         — применение темы к интерфейсу и главному экрану
+    theme.py               — базовые таблицы стилей и шрифты
+    qss.py                 — таблицы стилей (QSS) для тем
+    themes_catalog.py      — каталог из 10 тем оформления
+    tab_home.py            — вкладка «Главная»
+    tab_strategy.py        — вкладка стратегий
+    tab_games.py           — вкладка игр и сервисов
+    tab_telegram.py        — вкладка Telegram-прокси
+    tab_settings.py        — вкладка настроек
+    tray.py                — иконка в трее
+    workers.py             — фоновые потоки (QThread-воркеры)
+    widgets_home.py        — карточки и анимации главного экрана
+    widgets_nav.py         — боковая навигация
+    widgets_popups.py      — всплывающие окна (тест обхода и др.)
+    widgets_power.py       — кнопка вкл/выкл
+    widgets_settings.py    — элементы вкладки настроек
+    widgets_custom.py      — точка сборки кастомных виджетов
+    icons.py               — иконки навигации
+    paths.py               — пути к ассетам
+    effects.py             — визуальные эффекты (тени, размытие)
+    gradient_background.py — фоновый градиент/изображение темы
+    fonts.py               — загрузка шрифтов
+    i18n.py                — русский/английский перевод интерфейса
     waiting_runner_game.py — мини-игра на время автоподбора
   tools/
-    repo.py               — снапшоты/откат без установленного git
-  tests/
-    test_core_logic.py    — основные тесты логики
-    test_auto_selector_priority.py — приоритеты автоподбора
-    test_gui_smoke.py     — smoke-тесты интерфейса
-    test_window_scaling.py — масштабирование окна
-  installer.iss           — скрипт Inno Setup для установщика
-  VERSION                 — текущая версия (читается самообновлением)
+    repo.py                — снапшоты/откат без установленного git
+    check_lint.py          — проверка кода (pyflakes) перед коммитом
+    optimize_assets.py     — сжатие картинок и фонов тем
+  tests/                   — 15 файлов тестов: логика автоподбора, стратегии, служба/автозапуск, самообновление, темы, Telegram-прокси, логи, интерфейс
 ```
 
 ## Тесты
