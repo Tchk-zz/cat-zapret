@@ -11,7 +11,7 @@ from PyQt6.QtCore import (
     QPoint, QSize,
 )
 from PyQt6.QtGui import (
-    QColor, QIcon, QPixmap,
+    QColor, QIcon,
 )
 from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QFileDialog, QFrame, QGraphicsDropShadowEffect,
@@ -1049,20 +1049,12 @@ class MainWindow(
         was_active = bool(getattr(self, "_home_cat_auto_active", False))
         if show_panel != was_active and hasattr(self, "home_cat"):
             if show_panel:
-                search_pixmap = getattr(self, "_home_cat_search_pixmap", QPixmap())
-                if not search_pixmap.isNull():
-                    self.home_cat.setPixmap(search_pixmap)
+                self._set_home_cat_frame("search")
                 if hasattr(self, "sleep_z"):
                     self.sleep_z.set_sleeping(False)
             else:
                 running = bool(self.runner.is_running()) if hasattr(self, "runner") else False
-                normal_pixmap = (
-                    getattr(self, "_home_cat_open_pixmap", QPixmap())
-                    if running
-                    else getattr(self, "_home_cat_closed_pixmap", QPixmap())
-                )
-                if not normal_pixmap.isNull():
-                    self.home_cat.setPixmap(normal_pixmap)
+                self._set_home_cat_frame("open" if running else "closed")
                 if hasattr(self, "sleep_z"):
                     self.sleep_z.set_sleeping(is_dark and not running)
             self._home_cat_auto_active = show_panel
@@ -2048,13 +2040,7 @@ class MainWindow(
         # pixel-aligned and cannot shift or resize the mascot.
         auto_cat_active = cur == "dark" and bool(getattr(self, "_home_cat_auto_active", False))
         if cur == "dark" and hasattr(self, "home_cat") and not auto_cat_active:
-            cat_pixmap = (
-                getattr(self, "_home_cat_open_pixmap", QPixmap())
-                if on
-                else getattr(self, "_home_cat_closed_pixmap", QPixmap())
-            )
-            if not cat_pixmap.isNull():
-                self.home_cat.setPixmap(cat_pixmap)
+            self._set_home_cat_frame("open" if on else "closed")
         if hasattr(self, "sleep_z"):
             self.sleep_z.set_sleeping(cur == "dark" and not on and not auto_cat_active)
         if cur == "dark":
@@ -2098,17 +2084,25 @@ class MainWindow(
         if hasattr(self, "home_tg_srv"):
             self._refresh_home_cards()
         running = self.runner.is_running()
+        # This method runs on a 2s timer. setStyleSheet() re-parses the sheet
+        # and repolishes the widget every single time, so the dot colour is
+        # only rewritten when the state actually flips.
+        if running != getattr(self, "_status_dot_running", None):
+            self.status_dot.setStyleSheet(
+                "color: #37c871; padding-top: 2px;"
+                if running
+                else "color: #ff5c6c; padding-top: 2px;"
+            )
+            self._status_dot_running = running
         if running:
             strat = self.runner.current_strategy
             name = strat.name if strat else ""
-            self.status_dot.setStyleSheet("color: #37c871; padding-top: 2px;")
             self.status_label.setText(self._t("подключено"))
             self.tray.set_state("running", name or "работает")
             if hasattr(self, "run_field"):
                 self.run_field.setText(name or "\u2014")
             self._set_power_state(True)
         else:
-            self.status_dot.setStyleSheet("color: #ff5c6c; padding-top: 2px;")
             self.status_label.setText(self._t("отключено"))
             self.tray.set_state("stopped", "остановлен")
             if hasattr(self, "run_field"):
@@ -2173,6 +2167,7 @@ class MainWindow(
             "_update_thread",
             "_check_thread",
             "_bootstrap_thread",
+            "_list_update_thread",
             "_tg_update_thread",
             "_app_update_thread",
         ):
@@ -2190,6 +2185,7 @@ class MainWindow(
         self._update_worker = None
         self._check_worker = None
         self._bootstrap_worker = None
+        self._list_update_worker = None
         self._app_update_worker = None
 
     def closeEvent(self, event) -> None:  # noqa: N802

@@ -86,12 +86,14 @@ class HomeTabMixin:
         self.home_cat.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.home_cat.setScaledContents(True)
         self.home_cat.setVisible(False)
-        self._home_cat_open_pixmap = QPixmap(asset_path("home_cat.png"))
-        self._home_cat_closed_pixmap = QPixmap(asset_path("home_cat_closed.png"))
-        self._home_cat_search_pixmap = QPixmap(asset_path("home_cat_search.png"))
+        # The mascot frames are decoded on first use, not here: the classic
+        # (purple/light/image) presets never show the cat, and the "searching"
+        # frame only appears while auto-select runs. Loading all three up front
+        # cost megabytes of RAM on every launch for nothing. See
+        # _home_cat_frame_pixmap() / _set_home_cat_frame().
+        self._home_cat_cache: dict[str, QPixmap] = {}
+        self._home_cat_scaled_cache: dict[tuple[str, int, int], QPixmap] = {}
         self._home_cat_auto_active = False
-        # Keep the original alias for the dark-layout geometry calculation.
-        self._home_cat_pixmap = self._home_cat_open_pixmap
         self.sleep_z = _SleepZWidget()
         # --- status pill ---
         self.status_pill = QFrame()
@@ -338,6 +340,59 @@ class HomeTabMixin:
                 btn.setText(plain)
                 btn.setMinimumHeight(0)
 
+    # Mascot frame -> asset file. Frames are decoded lazily and cached, so a
+    # user who never opens the dark theme never pays for them.
+    _HOME_CAT_ASSETS = {
+        "open": "home_cat.png",
+        "closed": "home_cat_closed.png",
+        "search": "home_cat_search.png",
+    }
+
+    def _home_cat_frame_pixmap(self, frame: str = "open") -> QPixmap:
+        """Return a mascot frame, decoding each file at most once."""
+        cache = self.__dict__.setdefault("_home_cat_cache", {})
+        pixmap = cache.get(frame)
+        if pixmap is None:
+            name = self._HOME_CAT_ASSETS.get(frame, self._HOME_CAT_ASSETS["open"])
+            pixmap = QPixmap(asset_path(name))
+            cache[frame] = pixmap
+        return pixmap
+
+    def _home_cat_scaled(self, frame: str, width: int, height: int) -> QPixmap:
+        """Mascot frame pre-scaled to the label size, cached per size.
+
+        ``QLabel.setScaledContents(True)`` rescales the pixmap on every repaint
+        with a fast, non-smoothed transform. Scaling once with a smooth
+        transform is both sharper and cheaper.
+        """
+        source = self._home_cat_frame_pixmap(frame)
+        if source.isNull() or width <= 0 or height <= 0:
+            return source
+        cache = self.__dict__.setdefault("_home_cat_scaled_cache", {})
+        key = (frame, width, height)
+        scaled = cache.get(key)
+        if scaled is None:
+            scaled = source.scaled(
+                width,
+                height,
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            cache[key] = scaled
+        return scaled
+
+    def _set_home_cat_frame(self, frame: str) -> bool:
+        """Show ``frame`` on the mascot label. False when the asset is missing."""
+        label = getattr(self, "home_cat", None)
+        if label is None:
+            return False
+        size = label.size()
+        pixmap = self._home_cat_scaled(frame, size.width(), size.height())
+        if pixmap.isNull():
+            return False
+        label.setPixmap(pixmap)
+        return True
+
     def _open_tg_tab(self) -> None:
         if hasattr(self, "tabs") and self.tabs.count():
             self.tabs.setCurrentIndex(self.tabs.count() - 1)
@@ -501,16 +556,18 @@ class HomeTabMixin:
         self.btn_toggle.setFixedSize(btn_w, btn_h)
         self.btn_toggle.setGeometry(btn_x, btn_y, btn_w, btn_h)
         self.btn_toggle.show()
-        if not self._home_cat_pixmap.isNull():
+        base_cat = self._home_cat_frame_pixmap("open")
+        if not base_cat.isNull():
             cat_w = 256
-            cat_h = int(cat_w * self._home_cat_pixmap.height() / max(1, self._home_cat_pixmap.width()))
+            cat_h = int(cat_w * base_cat.height() / max(1, base_cat.width()))
             # Big cat centered on the button: most of the head sits above the
             # button while the paws drape over its top edge (~34px overlap),
             # matching the reference composition.
             cat_y = max(0, btn_y + 44 - cat_h)
             self.home_cat.setParent(power_wrap)
-            self.home_cat.setPixmap(self._home_cat_pixmap)
+            # Fix the size first so the cached scaled frame matches the label.
             self.home_cat.setFixedSize(cat_w, cat_h)
+            self.home_cat.setPixmap(self._home_cat_scaled("open", cat_w, cat_h))
             self.home_cat.move((wrap_w - cat_w) // 2, cat_y)
             self.home_cat.setVisible(True)
             self.home_cat.raise_()
