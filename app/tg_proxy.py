@@ -224,7 +224,11 @@ def _engine_default_dc_redirects(pkg: str) -> dict:
         if out:
             return out
     except Exception:
-        pass
+        # Falling back to the built-in table is fine for an engine build that
+        # ships no DC_DEFAULT_IPS, so this is not a warning. But without any
+        # trace, the endless "DC not in config -> fallback" lines users report
+        # have no explanation at all.
+        _log.debug("could not read DC_DEFAULT_IPS from %s.utils", pkg, exc_info=True)
     return {
         1: "149.154.175.50",
         2: "149.154.167.51",
@@ -322,7 +326,10 @@ def local_version(data_dir: Path) -> str:
             if text:
                 return text
     except Exception:
-        pass
+        # Not fatal: we fall through to the bundled engine below. Logged at
+        # debug level because a missing runtime copy is the normal state
+        # before the first update.
+        _log.debug("could not read the updated engine VERSION file", exc_info=True)
     try:
         p = Path(__file__).resolve().parent / "tg_proxy_engine" / "VERSION"
         if p.exists():
@@ -330,11 +337,15 @@ def local_version(data_dir: Path) -> str:
             if text:
                 return text
     except Exception:
-        pass
+        _log.debug("could not read the bundled engine VERSION file", exc_info=True)
     try:
         from app.tg_proxy_engine import __version__
         return __version__
     except Exception:
+        # Every source failed, so the version is unknown. That silently
+        # disables update checks (an empty version never compares as older),
+        # which is exactly the kind of dead end that needs a trace.
+        _log.warning("engine version could not be determined from any source", exc_info=True)
         return ""
 
 
@@ -345,7 +356,9 @@ def save_local_version(data_dir: Path, tag: str) -> None:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(_norm(tag), encoding="utf-8")
     except OSError:
-        pass
+        # The engine was updated but the marker was not written, so the next
+        # check will offer the very same update again. Worth a warning.
+        _log.warning("could not save the engine version marker %s", tag, exc_info=True)
 
 
 def _version_key(v: str) -> tuple:
@@ -402,7 +415,10 @@ def latest_release(timeout: float = 10.0) -> Optional[TGProxyReleaseInfo]:
             if candidates:
                 return max(candidates, key=lambda rel: _version_key(rel.tag))
     except Exception:
-        pass
+        # The release list failed; the /latest endpoint below is tried next,
+        # so this alone is not user-visible. Debug level keeps launch-time
+        # checks on a flaky network from filling the log.
+        _log.debug("the GitHub release list request failed", exc_info=True)
     try:
         r = requests.get(
             LATEST_API,
@@ -417,7 +433,10 @@ def latest_release(timeout: float = 10.0) -> Optional[TGProxyReleaseInfo]:
         if isinstance(data, dict):
             return _release_from_json(data)
     except Exception:
-        pass
+        # Both endpoints are gone, so "no updates" is now indistinguishable
+        # from "could not check". Rate limiting (HTTP 403/429) lands here and
+        # is the usual cause, so record it.
+        _log.warning("could not check for engine updates on GitHub", exc_info=True)
     return None
 
 
@@ -861,10 +880,19 @@ class TGProxyRunner:
                                 asyncio.gather(*pending, return_exceptions=True)
                             )
                         except Exception:
-                            pass
+                            # Tasks refusing to finish during shutdown is
+                            # routine, so debug level only.
+                            _log.debug(
+                                "draining %d pending engine tasks failed",
+                                len(pending),
+                                exc_info=True,
+                            )
                     loop.close()
             except Exception:
-                pass
+                # A loop that fails to close leaks its sockets, which can keep
+                # the listening port busy and make the next start fail with
+                # "address already in use". That must not stay invisible.
+                _log.warning("cleaning up the engine event loop failed", exc_info=True)
             # Only clear shared state if THIS thread still owns the slot —
             # a newer engine may already have replaced us.
             with self._lock:
@@ -878,7 +906,10 @@ class TGProxyRunner:
                 try:
                     cb(0)
                 except Exception:
-                    pass
+                    # The GUI never learns the engine died, so the UI keeps
+                    # showing "running". A silent swallow here is exactly the
+                    # kind of stuck state users report.
+                    _log.warning("the engine exit callback failed", exc_info=True)
 
     async def _run_async(self, stop_event: asyncio.Event) -> None:
         """Run the upstream ``_run`` coroutine with our config applied.
@@ -912,6 +943,14 @@ class TGProxyRunner:
             # built-in map with "auto" or set explicit DC:IP values.
             proxy_config.dc_redirects = _effective_dc_redirects(pkg, parse_dc_ip_list, self._dc_ips)
         except Exception:
+            # With an empty map every DC goes through the fallback chain, which
+            # is the direct cause of the repeated "DC not in config -> fallback"
+            # reports and of a noticeably slower connect. The proxy still works,
+            # so keep the fallback, but never hide the reason.
+            _log.warning(
+                "could not build the DC redirect map, falling back to an empty one",
+                exc_info=True,
+            )
             proxy_config.dc_redirects = {}
         # Sensible defaults for the rest.
         proxy_config.buffer_size = 256 * 1024
@@ -953,7 +992,14 @@ class TGProxyRunner:
                             if ok:
                                 self._cb("[TG] " + msg)
                         except Exception:
-                            pass
+                            # Runs for every engine log record, so this stays at
+                            # debug level (off by default) and costs nothing in
+                            # normal use. Safe from recursion: _log belongs to
+                            # the "zapret" tree, not to "tg-mtproto-proxy".
+                            _log.debug(
+                                "forwarding an engine log record to the GUI failed",
+                                exc_info=True,
+                            )
 
                 h = _GuiHandler(self.log, deduper)
                 h._tg_gui = True  # type: ignore[attr-defined]
@@ -968,7 +1014,9 @@ class TGProxyRunner:
             engine_log.propagate = False
             logging.getLogger("asyncio").setLevel(logging.WARNING)
         except Exception:
-            pass
+            # If this wiring fails the proxy still runs, but the GUI log pane
+            # stays empty and looks broken to the user. Record why.
+            _log.warning("could not attach the engine log handler", exc_info=True)
 
         self.log(f"[TG] Listening on {cfg.host}:{cfg.port} (secret: {cfg.secret[:8]}...)")
         try:
@@ -994,7 +1042,10 @@ class TGProxyRunner:
                 try:
                     loop.call_soon_threadsafe(ev.set)
                 except Exception:
-                    pass
+                    # The stop signal never reached the engine, so the thread
+                    # keeps running while the UI already shows "stopped" and
+                    # the port stays busy. This is the worst one to swallow.
+                    _log.warning("could not signal the engine to stop", exc_info=True)
             # Spawn a daemon "joiner" so the GUI thread doesn't block on
             # thread.join(timeout=5). The joiner cleans up _thread/_loop after
             # the engine thread exits.
@@ -1015,7 +1066,9 @@ class TGProxyRunner:
         try:
             thread.join(timeout=5.0)
         except Exception:
-            pass
+            # References are cleared below regardless, but a failed join means
+            # the engine thread may still be alive and holding the port.
+            _log.warning("waiting for the engine thread to finish failed", exc_info=True)
         with self._lock:
             if self._thread is thread:
                 self._thread = None
