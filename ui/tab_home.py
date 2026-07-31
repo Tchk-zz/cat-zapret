@@ -211,6 +211,7 @@ class HomeTabMixin:
         head.setSpacing(10)
         title = QLabel("Telegram Proxy")
         title.setStyleSheet("color: #ffffff; font-size: 27px; font-weight: 800; background: transparent;")
+        self.home_tg_title = title
         head.addWidget(title)
         head.addStretch(1)
         self.home_tg_status_dot = QLabel("●")
@@ -224,9 +225,11 @@ class HomeTabMixin:
         grid.setHorizontalSpacing(18)
         grid.setVerticalSpacing(20)
         grid.setColumnStretch(1, 1)
+        self.home_tg_key_labels = []
         def _mk_key(text):
             lab = QLabel(text)
             lab.setStyleSheet("color: #ffffff; font-size: 20px; font-weight: 700; background: transparent;")
+            self.home_tg_key_labels.append(lab)
             return lab
         def _mk_val():
             lab = QLabel("—")
@@ -271,6 +274,7 @@ class HomeTabMixin:
         head.setSpacing(10)
         title = QLabel("Zapret")
         title.setStyleSheet("color: #ffffff; font-size: 27px; font-weight: 800; background: transparent;")
+        self.home_zap_title = title
         head.addWidget(title)
         head.addStretch(1)
         self.home_zap_status_dot = QLabel("\u25cf")

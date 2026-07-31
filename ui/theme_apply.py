@@ -153,6 +153,61 @@ class ThemeApplyMixin:
                 effect.setColor(shadow_color)
         if hasattr(self, "home_auto_panel"):
             self._set_dark_auto_panel_active(self._auto_thread is not None)
+        # --- Home card text colours ---
+        # Titles/keys/values inside the Telegram/Zapret home cards (and the
+        # embedded autoselect panel) used to be hardcoded to a single
+        # light-on-dark palette. That text turns invisible once the light
+        # preset's card fill goes white, so the colour must follow the theme.
+        if is_light_preset:
+            home_text = "#1a1a1a"
+            home_text_muted = "rgba(26, 26, 26, 0.68)"
+            home_status_muted = "rgba(26, 26, 26, 0.55)"
+        elif is_image:
+            home_text = theme.text
+            home_text_muted = theme.text_muted
+            home_status_muted = theme.text_muted
+        else:
+            # Dark preset + purple preset keep the original light-on-dark look.
+            home_text = "#ffffff"
+            home_text_muted = "rgba(255, 255, 255, 0.78)"
+            home_status_muted = "#e8e8e8"
+        title_style = f"color: {home_text}; font-size: 27px; font-weight: 800; background: transparent;"
+        for lbl in (getattr(self, "home_tg_title", None), getattr(self, "home_zap_title", None)):
+            if lbl is not None:
+                lbl.setStyleSheet(title_style)
+        key_style = f"color: {home_text}; font-size: 20px; font-weight: 700; background: transparent;"
+        for lbl in getattr(self, "home_tg_key_labels", []):
+            lbl.setStyleSheet(key_style)
+        value_style = f"color: {home_text_muted}; font-size: 20px; background: transparent;"
+        for lbl in (
+            getattr(self, "home_tg_srv", None),
+            getattr(self, "home_tg_port", None),
+            getattr(self, "home_tg_secret", None),
+        ):
+            if lbl is not None:
+                lbl.setStyleSheet(value_style)
+        if hasattr(self, "home_zap_strategy"):
+            self.home_zap_strategy.setStyleSheet(
+                f"color: {home_text_muted}; font-size: 21px; font-weight: 600; background: transparent;"
+            )
+        status_style = f"color: {home_status_muted}; font-size: 13px; font-weight: 600; background: transparent;"
+        for lbl in (getattr(self, "home_tg_status_label", None), getattr(self, "home_zap_status_label", None)):
+            if lbl is not None:
+                lbl.setStyleSheet(status_style)
+        if hasattr(self, "home_auto_panel"):
+            panel = self.home_auto_panel
+            if hasattr(panel, "title"):
+                panel.title.setStyleSheet(
+                    f"color: {home_text}; background: transparent; font-size: 20px; font-weight: 800;"
+                )
+            if hasattr(panel, "percent"):
+                panel.percent.setStyleSheet(
+                    f"color: {home_text}; background: transparent; font-size: 27px; font-weight: 800;"
+                )
+            if hasattr(panel, "detail"):
+                panel.detail.setStyleSheet(
+                    f"color: {home_text_muted}; background: transparent; font-size: 13px; font-weight: 600;"
+                )
         # --- Power button theme colours ---
         # The PowerButton is custom-painted (not styled by QSS), so we need
         # to explicitly tell it what colours to use for the glyph + gradient
