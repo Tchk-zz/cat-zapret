@@ -25,6 +25,12 @@ from app.service_manager import ServiceManager
 from app.strategy_manager import Strategy, StrategyManager
 from app import tg_proxy
 from .effects import effects_supported
+# Translation tables live in ui/i18n.py; re-exported here because the window
+# and the tests import these names from this module.
+from .i18n import (
+    localize_runtime_text,
+    tr_text,
+)
 from .icons import NAV_ICON_NAMES
 from .tab_games import GamesTabMixin
 from .tab_home import HomeTabMixin
@@ -43,18 +49,17 @@ from .editor_flow import EditorFlowMixin
 from .theme_apply import ThemeApplyMixin
 from .tray import Tray
 from .update_flow import UpdateFlowMixin
+# Painted widgets and popups live in ui/widgets_custom.py.
+from .widgets_custom import (
+    BypassTestPopup,
+    GamesColumnIcon,
+    StyledPopup,
+    _GlassNav,
+)
 from .workers import (
     AutoSelectWorker,
     BootstrapWorker,
     CheckWorker,
-)
-
-
-# Translation tables live in ui/i18n.py; re-exported here because the
-# window and the tests import these names from this module.
-from .i18n import (  # noqa: E402
-    localize_runtime_text,
-    tr_text,
 )
 
 
@@ -91,15 +96,6 @@ def app_icon() -> QIcon:
 # The monospace font helper now lives in ui/theme.py (alias kept so existing
 # call sites in this module stay untouched).
 _smooth_code_font = smooth_code_font
-
-
-# Painted widgets and popups live in ui/widgets_custom.py.
-from .widgets_custom import (  # noqa: E402
-    BypassTestPopup,
-    GamesColumnIcon,
-    StyledPopup,
-    _GlassNav,
-)
 
 
 class MainWindow(
