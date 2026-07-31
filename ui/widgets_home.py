@@ -15,10 +15,56 @@ from .effects import apply_effect
 from .i18n import tr_text
 
 
+#: Fill of the reference (dark preset) card surface.
+DEFAULT_SURFACE_FILL = "#1c1c1c"
+
+
+def surface_fill_color(value) -> QColor:
+    """Convert a stylesheet-style colour string into a QColor.
+
+    Themes describe their card background exactly the way the stylesheets do:
+    either "#rrggbb" or "rgba(r, g, b, a)" with a 0-255 alpha. QColor does not
+    parse that second form, so it is handled here. Anything unparseable falls
+    back to the reference dark fill rather than leaving the card invisible.
+    """
+    if isinstance(value, QColor):
+        return QColor(value)
+    text = str(value or "").strip()
+    lowered = text.lower()
+    if (lowered.startswith("rgba(") or lowered.startswith("rgb(")) and text.endswith(")"):
+        inner = text[text.index("(") + 1: -1]
+        parts = [p.strip() for p in inner.split(",") if p.strip()]
+        if len(parts) in (3, 4):
+            try:
+                r, g, b = (int(round(float(p))) for p in parts[:3])
+                if len(parts) == 4:
+                    raw_alpha = float(parts[3])
+                    # Qt stylesheets use 0-255, CSS uses 0-1; accept both.
+                    alpha = round(raw_alpha * 255) if raw_alpha <= 1.0 else round(raw_alpha)
+                else:
+                    alpha = 255
+                clamp = lambda v: max(0, min(255, int(v)))  # noqa: E731
+                return QColor(clamp(r), clamp(g), clamp(b), clamp(alpha))
+            except ValueError:
+                pass
+    colour = QColor(text)
+    return colour if colour.isValid() else QColor(DEFAULT_SURFACE_FILL)
+
+
 def _paint_dark_3d_surface(
-    widget, painter: QPainter, hovered: bool = False, pressed: bool = False, phase: float = 0.0
+    widget, painter: QPainter, hovered: bool = False, pressed: bool = False, phase: float = 0.0,
+    fill=None, light: bool = False,
 ) -> None:
-    """Paint a solid dark card with an animated gradient rim."""
+    """Paint a solid card with an animated gradient rim.
+
+    Every theme uses this same surface; only ``fill`` and the rim/highlight
+    contrast differ. Previously it was painted for the dark preset only, so in
+    every other theme the cards were invisible and their text floated directly
+    on the background image.
+
+    ``light`` inverts the rim and the inner highlight so the raised edge stays
+    visible on light card fills, where a white highlight would disappear.
+    """
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     rect = QRectF(widget.rect()).adjusted(1.5, 1.5, -1.5, -1.5)
     radius = 20.0
@@ -26,16 +72,24 @@ def _paint_dark_3d_surface(
     path.addRoundedRect(rect, radius, radius)
 
     # The surface itself is deliberately flat: no fill gradient or sheen.
-    painter.fillPath(path, QColor("#1c1c1c"))
+    painter.fillPath(path, fill if isinstance(fill, QColor) else QColor(DEFAULT_SURFACE_FILL))
 
-    # Rotate the existing rim palette around the card perimeter.
+    # Rotate the rim palette around the card perimeter.
     rim = QConicalGradient(rect.center(), -360.0 * float(phase))
-    bright = QColor(155, 165, 180, 155 if hovered else 105)
-    rim.setColorAt(0.0, bright)
-    rim.setColorAt(0.38, QColor(84, 92, 105, 110))
-    rim.setColorAt(0.72, QColor(49, 54, 63, 95))
-    rim.setColorAt(0.90, QColor(12, 14, 18, 210))
-    rim.setColorAt(1.0, bright)
+    if light:
+        bright = QColor(96, 104, 118, 165 if hovered else 120)
+        rim.setColorAt(0.0, bright)
+        rim.setColorAt(0.38, QColor(140, 148, 162, 120))
+        rim.setColorAt(0.72, QColor(112, 120, 134, 105))
+        rim.setColorAt(0.90, QColor(60, 66, 76, 150))
+        rim.setColorAt(1.0, bright)
+    else:
+        bright = QColor(155, 165, 180, 155 if hovered else 105)
+        rim.setColorAt(0.0, bright)
+        rim.setColorAt(0.38, QColor(84, 92, 105, 110))
+        rim.setColorAt(0.72, QColor(49, 54, 63, 95))
+        rim.setColorAt(0.90, QColor(12, 14, 18, 210))
+        rim.setColorAt(1.0, bright)
     pen = QPen(QBrush(rim), 1.7)
     painter.setPen(pen)
     painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -45,7 +99,10 @@ def _paint_dark_3d_surface(
     inner = QRectF(rect).adjusted(2.2, 2.2, -2.2, -2.2)
     inner_path = QPainterPath()
     inner_path.addRoundedRect(inner, radius - 2.0, radius - 2.0)
-    inner_pen = QPen(QColor(255, 255, 255, 22 if hovered else 13), 0.8)
+    if light:
+        inner_pen = QPen(QColor(0, 0, 0, 30 if hovered else 20), 0.8)
+    else:
+        inner_pen = QPen(QColor(255, 255, 255, 22 if hovered else 13), 0.8)
     painter.setPen(inner_pen)
     painter.drawPath(inner_path)
 
@@ -56,6 +113,9 @@ class _Dark3DPanel(QFrame):
         self._dark_3d = False
         self._hovered = False
         self._rim_phase = 0.0
+        # Card fill; replaced per theme via set_surface_style().
+        self._surface_fill = QColor(DEFAULT_SURFACE_FILL)
+        self._surface_light = False
         self._rim_anim = QVariantAnimation(self)
         self._rim_anim.setStartValue(0.0)
         self._rim_anim.setEndValue(1.0)
@@ -78,6 +138,16 @@ class _Dark3DPanel(QFrame):
         self._dark_3d = enabled
         self.update()
 
+    def set_surface_style(self, fill, light: bool = False) -> None:
+        """Set the card fill for the active theme.
+
+        ``fill`` accepts the same colour strings the stylesheets use, so a
+        theme's ``card_bg`` can be passed straight through.
+        """
+        self._surface_fill = surface_fill_color(fill)
+        self._surface_light = bool(light)
+        self.update()
+
     def enterEvent(self, event):  # noqa: N802
         self._hovered = True
         self.update()
@@ -93,7 +163,10 @@ class _Dark3DPanel(QFrame):
             super().paintEvent(event)
             return
         painter = QPainter(self)
-        _paint_dark_3d_surface(self, painter, self._hovered, False, self._rim_phase)
+        _paint_dark_3d_surface(
+            self, painter, self._hovered, False, self._rim_phase,
+            fill=self._surface_fill, light=self._surface_light,
+        )
         painter.end()
 
 
@@ -103,6 +176,9 @@ class _Dark3DButton(QPushButton):
         self._dark_3d = False
         self._hovered = False
         self._rim_phase = 0.0
+        # Card fill; replaced per theme via set_surface_style().
+        self._surface_fill = QColor(DEFAULT_SURFACE_FILL)
+        self._surface_light = False
         self._rim_anim = QVariantAnimation(self)
         self._rim_anim.setStartValue(0.0)
         self._rim_anim.setEndValue(1.0)
@@ -125,6 +201,16 @@ class _Dark3DButton(QPushButton):
         self._dark_3d = enabled
         self.update()
 
+    def set_surface_style(self, fill, light: bool = False) -> None:
+        """Set the card fill for the active theme.
+
+        ``fill`` accepts the same colour strings the stylesheets use, so a
+        theme's ``card_bg`` can be passed straight through.
+        """
+        self._surface_fill = surface_fill_color(fill)
+        self._surface_light = bool(light)
+        self.update()
+
     def enterEvent(self, event):  # noqa: N802
         self._hovered = True
         self.update()
@@ -140,7 +226,10 @@ class _Dark3DButton(QPushButton):
             super().paintEvent(event)
             return
         painter = QPainter(self)
-        _paint_dark_3d_surface(self, painter, self._hovered, self.isDown(), self._rim_phase)
+        _paint_dark_3d_surface(
+            self, painter, self._hovered, self.isDown(), self._rim_phase,
+            fill=self._surface_fill, light=self._surface_light,
+        )
         painter.end()
 
 

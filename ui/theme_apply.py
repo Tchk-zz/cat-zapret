@@ -93,6 +93,7 @@ class ThemeApplyMixin:
         purple gradient / flat dark / flat light).
         """
         from .themes_catalog import get_theme, is_image_theme, get_theme_qss
+        from .widgets_home import DEFAULT_SURFACE_FILL
         theme_id = getattr(self, "current_theme", "purple")
         theme = get_theme(theme_id)
         is_image = is_image_theme(theme_id)
@@ -111,7 +112,22 @@ class ThemeApplyMixin:
         # home layout and only colors and the background image change.
         if hasattr(self, "home_body"):
             self._apply_home_layout()
-        # --- Raised 3D home surfaces (dark preset only) ---
+        # --- Raised card surfaces (EVERY theme, not just the dark preset) ---
+        # These cards are custom-painted, and the painting used to be enabled
+        # for the dark preset only. In every other theme the cards were simply
+        # not drawn, so the Telegram/Zapret text floated straight on the
+        # background with no panel behind it. The surface is now always painted
+        # and only its colour comes from the theme.
+        if is_dark_preset:
+            # Keep the reference look byte-for-byte identical.
+            surface_fill = DEFAULT_SURFACE_FILL
+        elif is_light_preset:
+            surface_fill = "rgba(255, 255, 255, 235)"
+        else:
+            surface_fill = theme.card_bg
+        surface_light = not theme.is_dark
+        # A heavy black shadow under a light card looks like dirt, so soften it.
+        shadow_color = QColor(0, 0, 0, 70 if surface_light else 165)
         for home_surface in (
             getattr(self, "home_tg_card", None),
             getattr(self, "home_zap_card", None),
@@ -122,16 +138,19 @@ class ThemeApplyMixin:
         ):
             if home_surface is None or not hasattr(home_surface, "set_dark_3d"):
                 continue
-            home_surface.set_dark_3d(is_dark_preset)
-            if is_dark_preset:
-                if home_surface.graphicsEffect() is None:
-                    shadow = QGraphicsDropShadowEffect(home_surface)
-                    shadow.setBlurRadius(34)
-                    shadow.setOffset(0, 9)
-                    shadow.setColor(QColor(0, 0, 0, 165))
-                    apply_effect(home_surface, shadow)
-            elif home_surface.graphicsEffect() is not None:
-                home_surface.setGraphicsEffect(None)
+            home_surface.set_dark_3d(True)
+            if hasattr(home_surface, "set_surface_style"):
+                home_surface.set_surface_style(surface_fill, surface_light)
+            effect = home_surface.graphicsEffect()
+            if effect is None:
+                shadow = QGraphicsDropShadowEffect(home_surface)
+                shadow.setBlurRadius(34)
+                shadow.setOffset(0, 9)
+                shadow.setColor(shadow_color)
+                apply_effect(home_surface, shadow)
+            elif hasattr(effect, "setColor"):
+                # Reuse the existing effect but refresh it for the new theme.
+                effect.setColor(shadow_color)
         if hasattr(self, "home_auto_panel"):
             self._set_dark_auto_panel_active(self._auto_thread is not None)
         # --- Power button theme colours ---
