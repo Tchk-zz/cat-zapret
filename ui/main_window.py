@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import sys
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -47,7 +46,6 @@ from .workers import (
     AutoSelectWorker,
     BootstrapWorker,
     CheckWorker,
-    ListUpdateWorker,
 )
 
 
@@ -1129,71 +1127,6 @@ class MainWindow(
     def _toggle_updates(self, on: bool) -> None:
         self.config.check_updates_on_launch = on
         self.config.save()
-
-    def _toggle_auto_update_lists(self, on: bool) -> None:
-        self.config.auto_update_lists = bool(on)
-        self.config.save()
-
-    def _maybe_auto_update_lists(self) -> None:
-        try:
-            if not getattr(self.config, "auto_update_lists", True):
-                return
-            interval = int(getattr(self.config, "list_update_interval_hours", 24) or 24)
-            last = int(getattr(self.config, "last_lists_update", 0) or 0)
-            if list_manager.should_auto_update_lists(last, interval):
-                # Delay a little so first-run UI/auto-start is not blocked by GitHub.
-                QTimer.singleShot(6500, lambda: self._start_list_update(manual=False))
-        except Exception:
-            pass
-
-    def force_update_lists(self) -> None:
-        self._start_list_update(manual=True)
-
-    def _start_list_update(self, manual: bool = False) -> None:
-        if self._list_update_thread is not None:
-            return
-        if not self._require_installed():
-            return
-        if manual:
-            self.progress.setVisible(True)
-            self.progress.setRange(0, 0)
-            self.progress_label.setText(self._t("Обновление zapret..."))
-            self._set_busy(True)
-        worker = ListUpdateWorker(self.zapret_dir)
-        thread = QThread(self)
-        self._list_update_thread = thread
-        self._list_update_worker = worker
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.progress.connect(self._append_log)
-        worker.finished.connect(lambda res, m=manual: self._on_lists_update_finished(res, m))
-        thread.start()
-
-    def _on_lists_update_finished(self, res, manual: bool) -> None:
-        if self._list_update_thread is not None:
-            self._list_update_thread.quit()
-            self._list_update_thread.wait()
-            self._list_update_thread = None
-            self._list_update_worker = None
-        if manual:
-            self.progress.setRange(0, 100)
-            self.progress.setVisible(False)
-            self._set_busy(False)
-        msg = getattr(res, "message", str(res))
-        ok = bool(getattr(res, "ok", False))
-        self._log("[lists] " + msg)
-        changed = int(getattr(res, "updated", 0) or 0)
-        if ok:
-            self.config.last_lists_update = int(time.time())
-            self.config.save()
-            if changed > 0:
-                self._reload_domain_files()
-                self._restart_engine_fresh()
-        if manual:
-            if ok:
-                QMessageBox.information(self, self._msg_title("Обновление"), self._msg_text(msg))
-            else:
-                QMessageBox.warning(self, self._msg_title("Обновление"), self._msg_text(msg))
 
     def show_hosts_dialog(self) -> None:
         block = list_manager.build_hosts_block(self.zapret_dir, allow_network=True)

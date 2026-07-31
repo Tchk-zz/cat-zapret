@@ -9,6 +9,11 @@ both of which download something from GitHub on a worker thread:
   locked, and restarts them only after a clearly successful update.
 * **application self-update** -- checks for a newer Zapret GUI installer and
   runs it (``_check_app_update_silent`` ... ``_on_app_download_finished``).
+* **domain list updates** -- refreshes the domain lists the engine filters on
+  (``_toggle_auto_update_lists`` ... ``_on_lists_update_finished``), either
+  automatically a few seconds after launch or on demand from the settings tab.
+  It owns ``_list_update_thread`` / ``_list_update_worker``, and only reloads
+  the editor and restarts a running engine when something actually changed.
 
 The two flows deliberately use separate thread/worker slots so a zapret update
 and an installer download can never clobber each other's state:
@@ -23,12 +28,17 @@ so those prefixes are part of the contract with ui/workers.py.
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QThread
+import time
+
+from PyQt6.QtCore import QThread, QTimer
 from PyQt6.QtWidgets import QMessageBox
+
+from app import list_manager
 
 from .workers import (
     AppSelfUpdateDownloadWorker,
     AppSelfUpdateWorker,
+    ListUpdateWorker,
     UpdateApplyWorker,
     UpdateCheckWorker,
 )
@@ -289,3 +299,70 @@ class UpdateFlowMixin:
                 self._msg_title("\u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435 \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u044f"),
                 self._msg_text(msg),
             )
+
+    # --------------------------------------------------- domain list updates
+
+    def _toggle_auto_update_lists(self, on: bool) -> None:
+        self.config.auto_update_lists = bool(on)
+        self.config.save()
+
+    def _maybe_auto_update_lists(self) -> None:
+        try:
+            if not getattr(self.config, "auto_update_lists", True):
+                return
+            interval = int(getattr(self.config, "list_update_interval_hours", 24) or 24)
+            last = int(getattr(self.config, "last_lists_update", 0) or 0)
+            if list_manager.should_auto_update_lists(last, interval):
+                # Delay a little so first-run UI/auto-start is not blocked by GitHub.
+                QTimer.singleShot(6500, lambda: self._start_list_update(manual=False))
+        except Exception:
+            pass
+
+    def force_update_lists(self) -> None:
+        self._start_list_update(manual=True)
+
+    def _start_list_update(self, manual: bool = False) -> None:
+        if self._list_update_thread is not None:
+            return
+        if not self._require_installed():
+            return
+        if manual:
+            self.progress.setVisible(True)
+            self.progress.setRange(0, 0)
+            self.progress_label.setText(self._t("Обновление zapret..."))
+            self._set_busy(True)
+        worker = ListUpdateWorker(self.zapret_dir)
+        thread = QThread(self)
+        self._list_update_thread = thread
+        self._list_update_worker = worker
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(self._append_log)
+        worker.finished.connect(lambda res, m=manual: self._on_lists_update_finished(res, m))
+        thread.start()
+
+    def _on_lists_update_finished(self, res, manual: bool) -> None:
+        if self._list_update_thread is not None:
+            self._list_update_thread.quit()
+            self._list_update_thread.wait()
+            self._list_update_thread = None
+            self._list_update_worker = None
+        if manual:
+            self.progress.setRange(0, 100)
+            self.progress.setVisible(False)
+            self._set_busy(False)
+        msg = getattr(res, "message", str(res))
+        ok = bool(getattr(res, "ok", False))
+        self._log("[lists] " + msg)
+        changed = int(getattr(res, "updated", 0) or 0)
+        if ok:
+            self.config.last_lists_update = int(time.time())
+            self.config.save()
+            if changed > 0:
+                self._reload_domain_files()
+                self._restart_engine_fresh()
+        if manual:
+            if ok:
+                QMessageBox.information(self, self._msg_title("Обновление"), self._msg_text(msg))
+            else:
+                QMessageBox.warning(self, self._msg_title("Обновление"), self._msg_text(msg))
