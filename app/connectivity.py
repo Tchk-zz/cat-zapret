@@ -190,6 +190,14 @@ class DeepResult:
 
 
 # --- low level probes -----------------------------------------------------
+# Статусы, которыми отвечает заглушка провайдера/Фильтра, а не сам сайт:
+# 451 — «недоступно по юридическим причинам», 495-497 — TLS-ошибки nginx
+# на подменённом сертификате. Раньше такая заглушка считалась успехом.
+_BLOCKED_STATUSES = frozenset({451, 495, 496, 497})
+# Пауза между повторами в _freeze_test после мгновенно упавшего запроса.
+_RETRY_PAUSE = 0.2
+
+
 def _probe(url: str, timeout: float) -> Tuple[bool, float]:
     """Return (reachable, elapsed_ms) for a single URL."""
     if requests is None:
@@ -204,7 +212,10 @@ def _probe(url: str, timeout: float) -> Tuple[bool, float]:
             allow_redirects=True,
         )
         elapsed = (time.monotonic() - start) * 1000.0
-        ok = resp.status_code < 500
+        ok = (
+            resp.status_code < 500
+            and resp.status_code not in _BLOCKED_STATUSES
+        )
         resp.close()
         return (ok, elapsed)
     except Exception:
@@ -254,7 +265,8 @@ def _freeze_test(
     Small assets are requested repeatedly to keep the path busy for the whole
     window, so DPI that throttles after a few seconds is still caught.
     """
-    if requests is None:
+    # Пустой список URL раньше ронял проверку в ZeroDivisionError на urls[i % len(urls)].
+    if requests is None or not urls:
         return (False, 0.0, False)
     reached = False
     froze = False
@@ -303,6 +315,9 @@ def _freeze_test(
                 # Never even connected; not a freeze, just unreachable.
                 break
             # Transient hiccup after a good start; keep trying within window.
+            # Пауза обязательна: без неё мгновенно падающий запрос крутил
+            # цикл на полной скорости всё окно и жёг CPU и сеть.
+            time.sleep(_RETRY_PAUSE)
             continue
     elapsed = max(time.monotonic() - start, 0.001)
     mbps = (total_bytes * 8.0) / elapsed / 1_000_000.0

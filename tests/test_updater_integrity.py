@@ -5,6 +5,49 @@ import unittest
 from app.updater import _common_root
 
 
+class _FakeResponse:
+    """Streaming stand-in for a requests Response.
+
+    The updater reads the archive with ``iter_content`` now, so the fake has
+    to behave like a real streaming response: context manager, headers and
+    chunked reads.
+    """
+
+    def __init__(self, data: bytes, chunk_size: int = 8):
+        self._data = data
+        self._chunk = chunk_size
+        self.headers = {"Content-Length": str(len(data))}
+        self.chunks_served = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def raise_for_status(self):
+        return None
+
+    def iter_content(self, chunk_size=None):
+        size = int(chunk_size) if chunk_size else self._chunk
+        size = min(size, self._chunk)
+        for start in range(0, len(self._data), size):
+            self.chunks_served += 1
+            yield self._data[start:start + size]
+
+
+class _FakeRequests:
+    """Minimal ``requests`` replacement handing out a ``_FakeResponse``."""
+
+    def __init__(self, data: bytes, chunk_size: int = 8):
+        self.response = _FakeResponse(data, chunk_size)
+        self.calls = []
+
+    def get(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return self.response
+
+
 class UpdaterIntegrityTests(unittest.TestCase):
 
     def test_common_root_does_not_strip_content_folder(self):
@@ -73,19 +116,11 @@ class UpdaterIntegrityTests(unittest.TestCase):
             zf.writestr("bin/winws.exe", "ok")
             zf.writestr("general.bat", "echo winws.exe --wf-tcp=443 --dpi-desync=fake")
 
-        class _Resp:
-            content = payload.getvalue()
-            def raise_for_status(self):
-                return None
-
-        class _Requests:
-            @staticmethod
-            def get(*_args, **_kwargs):
-                return _Resp()
+        fake_requests = _FakeRequests(payload.getvalue())
 
         old_requests = updater.requests
         try:
-            updater.requests = _Requests()
+            updater.requests = fake_requests
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td) / "zapret"
                 root.mkdir()
@@ -111,20 +146,12 @@ class UpdaterIntegrityTests(unittest.TestCase):
             zf.writestr("bundle/bin/winws.exe", b"new-winws")
             zf.writestr("bundle/lists/list-general.txt", "example.com\n")
 
-        class _Resp:
-            content = payload.getvalue()
-            def raise_for_status(self):
-                return None
-
-        class _Requests:
-            @staticmethod
-            def get(*_args, **_kwargs):
-                return _Resp()
+        fake_requests = _FakeRequests(payload.getvalue())
 
         old_requests = updater.requests
         old_open = builtins.open
         try:
-            updater.requests = _Requests()
+            updater.requests = fake_requests
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td)
                 (root / "bin").mkdir()
@@ -160,23 +187,15 @@ class UpdaterIntegrityTests(unittest.TestCase):
             zf.writestr("bundle/bin/WinDivert64.sys", b"new-driver")
             zf.writestr("bundle/lists/list-general.txt", "example.com\n")
 
-        class _Resp:
-            content = payload.getvalue()
-            def raise_for_status(self):
-                return None
-
-        class _Requests:
-            @staticmethod
-            def get(*_args, **_kwargs):
-                return _Resp()
+        fake_requests = _FakeRequests(payload.getvalue())
 
         old_requests = updater.requests
         old_open = builtins.open
         old_schedule = updater._schedule_replace_on_reboot
         old_release = updater._release_windivert_locks
         try:
-            updater.requests = _Requests()
-            updater._release_windivert_locks = lambda: None
+            updater.requests = fake_requests
+            updater._release_windivert_locks = lambda *_a, **_kw: None
             scheduled = []
             updater._schedule_replace_on_reboot = lambda target, data: scheduled.append((target.name, data)) or True
             with tempfile.TemporaryDirectory() as td:
@@ -210,6 +229,172 @@ class UpdaterIntegrityTests(unittest.TestCase):
         from app import updater
         # The constant itself must be a non-empty string starting with '.'.
         self.assertTrue(updater.INSTALLED_SHA256_MARKER.startswith("."))
+
+    def test_updater_streams_the_archive_in_chunks(self):
+        """The archive must be pulled with a streaming request. `.content`
+        buffered the whole file at once, and a single whole-download timeout
+        killed big updates on slow-but-healthy links."""
+        import io
+        import zipfile
+        from app import updater
+
+        payload = io.BytesIO()
+        with zipfile.ZipFile(payload, "w") as zf:
+            zf.writestr("bin/winws.exe", b"x" * 4096)
+            zf.writestr("general.bat", "echo winws.exe --wf-tcp=443")
+
+        fake_requests = _FakeRequests(payload.getvalue(), chunk_size=64)
+        statuses = []
+        old_requests = updater.requests
+        try:
+            updater.requests = fake_requests
+            with tempfile.TemporaryDirectory() as td:
+                root = Path(td) / "zapret"
+                root.mkdir()
+                rel = updater.ReleaseInfo("v-stream", "v-stream", "http://x", "http://y")
+                msg = updater.download_and_apply(rel, root, on_status=statuses.append)
+            self.assertIn("Обновлено", msg)
+            # Several chunks => the body really was streamed, not buffered.
+            self.assertGreater(fake_requests.response.chunks_served, 1)
+            _url, kwargs = fake_requests.calls[0]
+            self.assertTrue(kwargs.get("stream"))
+            # (connect, read) pair instead of one budget for the whole file.
+            self.assertIsInstance(kwargs.get("timeout"), tuple)
+            self.assertTrue(any("Загрузка" in s for s in statuses))
+        finally:
+            updater.requests = old_requests
+
+    def test_updater_rejects_an_oversized_archive(self):
+        """A hostile or broken server must not stream gigabytes into memory:
+        an oversized Content-Length is refused before reading the body."""
+        from app import updater
+
+        fake_requests = _FakeRequests(b"")
+        fake_requests.response.headers = {
+            "Content-Length": str(updater._MAX_ARCHIVE_BYTES + 1)
+        }
+        old_requests = updater.requests
+        try:
+            updater.requests = fake_requests
+            with tempfile.TemporaryDirectory() as td:
+                root = Path(td) / "zapret"
+                root.mkdir()
+                rel = updater.ReleaseInfo("v-big", "v-big", "http://x", "http://y")
+                msg = updater.download_and_apply(rel, root)
+            self.assertIn("Ошибка загрузки", msg)
+        finally:
+            updater.requests = old_requests
+
+    def test_updater_does_not_kill_the_engine_when_nothing_is_locked(self):
+        """The old code ran taskkill + `sc delete` on EVERY update, killing a
+        running engine and dropping the WinDivert service even when no file
+        was locked. Locks may only be released after a real write failure."""
+        import io
+        import zipfile
+        from app import updater
+
+        payload = io.BytesIO()
+        with zipfile.ZipFile(payload, "w") as zf:
+            zf.writestr("bin/winws.exe", b"new-winws")
+            zf.writestr("general.bat", "echo winws.exe --wf-tcp=443")
+
+        calls = []
+        old_requests = updater.requests
+        old_release = updater._release_windivert_locks
+        try:
+            updater.requests = _FakeRequests(payload.getvalue())
+            updater._release_windivert_locks = lambda *_a, **_kw: calls.append(1)
+            with tempfile.TemporaryDirectory() as td:
+                root = Path(td) / "zapret"
+                root.mkdir()
+                rel = updater.ReleaseInfo("v-nolock", "v-nolock", "http://x", "http://y")
+                msg = updater.download_and_apply(rel, root)
+            self.assertIn("Обновлено", msg)
+            self.assertEqual(calls, [])
+        finally:
+            updater._release_windivert_locks = old_release
+            updater.requests = old_requests
+
+    def test_updater_releases_locks_once_when_a_file_is_locked(self):
+        """A genuinely locked file triggers exactly one lock-release + retry,
+        not one per archive member."""
+        import builtins
+        import io
+        import zipfile
+        from app import updater
+
+        payload = io.BytesIO()
+        with zipfile.ZipFile(payload, "w") as zf:
+            zf.writestr("bin/winws.exe", b"new-winws")
+            zf.writestr("bin/cygwin1.dll", b"new-dll")
+
+        calls = []
+        old_requests = updater.requests
+        old_release = updater._release_windivert_locks
+        old_open = builtins.open
+        try:
+            updater.requests = _FakeRequests(payload.getvalue())
+            updater._release_windivert_locks = lambda *_a, **_kw: calls.append(1)
+            with tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                (root / "bin").mkdir()
+
+                def guarded_open(file, mode="r", *args, **kwargs):
+                    name = str(file).replace("\\", "/")
+                    if name.endswith("bin/winws.exe") and "w" in mode:
+                        raise OSError("locked")
+                    return old_open(file, mode, *args, **kwargs)
+
+                builtins.open = guarded_open
+                rel = updater.ReleaseInfo("v-lock", "v-lock", "http://x", "http://y")
+                msg = updater.download_and_apply(rel, root)
+                builtins.open = old_open
+            self.assertIn("частично", msg)
+            self.assertEqual(calls, [1])
+        finally:
+            builtins.open = old_open
+            updater._release_windivert_locks = old_release
+            updater.requests = old_requests
+
+    def test_updater_skipped_bin_text_file_is_not_critical(self):
+        """Only bin/*.exe|dll|sys are engine-critical. A skipped bin/readme.txt
+        must not downgrade a good update to a scary partial one."""
+        import builtins
+        import io
+        import zipfile
+        from app import updater
+
+        payload = io.BytesIO()
+        with zipfile.ZipFile(payload, "w") as zf:
+            zf.writestr("bin/readme.txt", b"hello")
+            zf.writestr("general.bat", "echo winws.exe --wf-tcp=443")
+
+        old_requests = updater.requests
+        old_release = updater._release_windivert_locks
+        old_open = builtins.open
+        try:
+            updater.requests = _FakeRequests(payload.getvalue())
+            updater._release_windivert_locks = lambda *_a, **_kw: None
+            with tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                (root / "bin").mkdir()
+
+                def guarded_open(file, mode="r", *args, **kwargs):
+                    name = str(file).replace("\\", "/")
+                    if name.endswith("bin/readme.txt") and "w" in mode:
+                        raise OSError("locked")
+                    return old_open(file, mode, *args, **kwargs)
+
+                builtins.open = guarded_open
+                rel = updater.ReleaseInfo("v-txt", "v-txt", "http://x", "http://y")
+                msg = updater.download_and_apply(rel, root)
+                builtins.open = old_open
+            self.assertNotIn("частично", msg)
+            self.assertIn("Обновлено", msg)
+        finally:
+            builtins.open = old_open
+            updater._release_windivert_locks = old_release
+            updater.requests = old_requests
 
     # --- Roblox profile (JSON externalisation) ---
 

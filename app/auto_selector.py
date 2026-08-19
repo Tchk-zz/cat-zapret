@@ -38,6 +38,12 @@ class AutoSelectResult:
 ProgressCb = Callable[[int, int, Strategy, str], None]
 
 
+# Ранги стадий для выбора частичного результата: результат глубокой проверки
+# всегда весомее быстрой, какие бы числа ни вернули их шкалы.
+_STAGE_QUICK = 0
+_STAGE_DEEP = 1
+
+
 def prioritize(
     strategies: List[Strategy],
     last_working: Optional[str] = None,
@@ -162,7 +168,12 @@ class AutoSelector:
     # --- working mode -----------------------------------------------------
     def _run_working(self, strategies, on_progress) -> AutoSelectResult:
         total = len(strategies)
-        best_partial = None  # (strat, score, latency, detail)
+        # Быстрая и глубокая проверки живут в разных шкалах: quick давал
+        # жёсткую единицу, deep — score 0..100. Раньше оба числа клались в один
+        # best_partial и сравнивались напрямую, так что выбор частичного
+        # результата был произвольным. Теперь ключ — пара (стадия, score):
+        # любой результат глубокой проверки важнее любого быстрого.
+        best_partial = None  # (strat, (stage, score), latency, detail)
         for idx, strat in enumerate(strategies, start=1):
             if self._cancel.is_set():
                 self.runner.stop()
@@ -187,8 +198,12 @@ class AutoSelector:
                 return AutoSelectResult(None, idx, total, cancelled=True, mode="working")
             if not quick.discord:
                 self.runner.log(f"[auto] {strat.name}: {quick.detail} — пропуск")
-                if quick.youtube and (best_partial is None or best_partial[1] < 1):
-                    best_partial = (strat, 1, quick.latency_ms, quick.detail)
+                if quick.youtube:
+                    cand = (
+                        strat, (_STAGE_QUICK, 1.0), quick.latency_ms, quick.detail,
+                    )
+                    if best_partial is None or cand[1] > best_partial[1]:
+                        best_partial = cand
                 self._cooldown()
                 continue
             on_progress(idx, total, strat, "проверка")
@@ -201,7 +216,9 @@ class AutoSelector:
                     latency_ms=res.latency_ms, mode="working",
                 )
             if res.score > 0:
-                cand = (strat, res.score, res.latency_ms, res.detail)
+                cand = (
+                    strat, (_STAGE_DEEP, res.score), res.latency_ms, res.detail,
+                )
                 if best_partial is None or cand[1] > best_partial[1]:
                     best_partial = cand
             self._cooldown()

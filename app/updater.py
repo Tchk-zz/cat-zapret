@@ -74,24 +74,26 @@ def _run_quiet(args) -> None:
         _log.warning("helper command failed", exc_info=True)
 
 
-def _release_windivert_locks() -> None:
-    """Try to unload common winws/WinDivert holders before replacing files.
+def _release_windivert_locks(on_status=None) -> None:
+    """Stop winws/WinDivert holders of a file we failed to replace.
 
-    Even when the GUI says zapret is off, the WinDivert kernel driver can stay
-    loaded for a short time or be held by a leftover service. Stopping these is
-    safe: winws recreates/loads WinDivert again on the next start.
+    Called ONLY after a real write error: the WinDivert kernel driver can stay
+    loaded for a short time or be held by a leftover service. Stopping is safe
+    (winws loads WinDivert again on the next start), but `sc delete` is not:
+    it removed the service registration outright, which could break a running
+    system zapret service, so it is no longer done here.
     """
     if not IS_WINDOWS:
         return
+    if on_status:
+        on_status("Файлы заняты: останавливаю winws.exe и драйвер WinDivert...")
+    _log.info("releasing winws/WinDivert locks before retrying a locked file")
     _run_quiet(["taskkill", "/F", "/IM", "winws.exe", "/T"])
     # Flowseal/winws versions use different service names across WinDivert
-    # releases. Stop/delete is best-effort; failures are ignored.
+    # releases. Stopping is best-effort; failures are ignored.
     for name in ("WinDivert", "WinDivert14", "WinDivert1.4", "windivert"):
         _run_quiet(["sc", "stop", name])
-    time.sleep(0.4)
-    for name in ("WinDivert", "WinDivert14", "WinDivert1.4", "windivert"):
-        _run_quiet(["sc", "delete", name])
-    time.sleep(0.2)
+    time.sleep(0.6)
 
 
 def _schedule_replace_on_reboot(target: Path, data: bytes) -> bool:
@@ -278,6 +280,61 @@ def _save_installed_sha256(zapret_dir: Path, digest: str) -> None:
         pass
 
 
+# Архив читается кусками: раньше весь файл тянулся одним requests.get с
+# общим таймаутом 60 с, и на медленном канале загрузка гарантированно
+# рвалась на полпути. Лимит размера защищает от сервера, который отдаёт
+# бесконечный поток в память.
+_DOWNLOAD_CHUNK = 256 * 1024
+_MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
+
+
+def _progress_text(tag: str, done: int, total: int) -> str:
+    name = tag or "zapret"
+    done_mb = format(done / 1048576, ".1f")
+    if total > 0:
+        return (
+            "Загрузка " + name + ": " + done_mb + " / "
+            + format(total / 1048576, ".1f") + " МБ"
+        )
+    return "Загрузка " + name + ": " + done_mb + " МБ"
+
+
+def _download(url: str, tag: str, timeout: float, on_status=None) -> bytes:
+    """Stream the release archive into memory, reporting progress.
+
+    ``timeout`` is passed as a (connect, read) pair, so it limits a single
+    stalled read instead of the whole download: a large archive on a slow but
+    healthy link is no longer aborted after a minute.
+    """
+    connect_timeout = min(float(timeout), 15.0)
+    buf = bytearray()
+    last_report = 0.0
+    with requests.get(
+        url, timeout=(connect_timeout, float(timeout)), stream=True
+    ) as resp:
+        resp.raise_for_status()
+        try:
+            total = int(resp.headers.get("Content-Length") or 0)
+        except (AttributeError, TypeError, ValueError):
+            total = 0
+        if total > _MAX_ARCHIVE_BYTES:
+            raise ValueError(
+                "архив слишком большой: " + str(total) + " байт"
+            )
+        for chunk in resp.iter_content(_DOWNLOAD_CHUNK):
+            if not chunk:
+                continue
+            buf.extend(chunk)
+            if len(buf) > _MAX_ARCHIVE_BYTES:
+                raise ValueError("архив слишком большой, загрузка прервана")
+            if on_status:
+                now = time.monotonic()
+                if now - last_report >= 0.5:
+                    last_report = now
+                    on_status(_progress_text(tag, len(buf), total))
+    return bytes(buf)
+
+
 def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0, on_status=None) -> str:
     """Download the release zip, verify its SHA-256, and extract it in place.
 
@@ -297,13 +354,12 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
     if on_status:
         on_status("\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430 " + (rel.tag or "zapret") + "...")
     try:
-        r = requests.get(rel.zip_url, timeout=timeout)
-        r.raise_for_status()
+        payload = _download(rel.zip_url, rel.tag, timeout, on_status)
     except Exception as exc:  # noqa: BLE001
         return "\u041e\u0448\u0438\u0431\u043a\u0430 \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0438: " + str(exc)
 
     # --- SHA-256 integrity check ---
-    actual_digest = _sha256_hex(r.content)
+    actual_digest = _sha256_hex(payload)
     if rel.digest_verified and rel.digest:
         # GitHub gave us a digest — mandatory match.
         if actual_digest.lower() != rel.digest.lower():
@@ -328,7 +384,11 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
                 "\u0443\u0434\u0430\u043b\u0438\u0442\u0435 \u0444\u0430\u0439\u043b " + INSTALLED_SHA256_MARKER + " \u0438 \u043f\u043e\u0432\u0442\u043e\u0440\u0438\u0442\u0435."
             )
 
-    _release_windivert_locks()
+    # Блокировки снимаем лениво. Раньше апдейтер на КАЖДОМ обновлении
+    # убивал winws.exe и удалял службы WinDivert ещё до распаковки — даже
+    # если ни один файл не был занят и пользователь нарочно держал обход
+    # включённым. Теперь — только при реальной ошибке записи и один раз.
+    locks_released = False
 
     protected = {"config.json", "custom_strategies", INSTALLED_MARKER, INSTALLED_SHA256_MARKER, REBOOT_PENDING_MARKER}
     extracted = 0
@@ -346,16 +406,25 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
     critical_skipped = []
     pending_reboot = []
 
+    # Критичны только исполняемые файлы движка в bin/. Раньше любой пропущенный
+    # файл из bin/ (readme, конфиг, случайный .txt) превращал удачное
+    # обновление в пугающее сообщение о частичном обновлении.
+    critical_suffixes = (".exe", ".dll", ".sys")
+
     def _record_skip(rel_path: str) -> None:
         nonlocal skipped
         skipped += 1
         skipped_paths.append(rel_path)
         rel_norm = rel_path.replace("\\", "/")
-        if rel_norm in critical_names or rel_norm.startswith("bin/"):
+        is_engine_binary = (
+            rel_norm.startswith("bin/")
+            and rel_norm.lower().endswith(critical_suffixes)
+        )
+        if rel_norm in critical_names or is_engine_binary:
             critical_skipped.append(rel_norm)
 
     try:
-        with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
+        with zipfile.ZipFile(io.BytesIO(payload)) as zf:
             names = zf.namelist()
             # GitHub zipball nests everything under a top folder — strip it.
             root = _common_root(names)
@@ -389,6 +458,19 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
                         extracted += 1
                     except OSError:
                         rel_norm = rel_path.replace("\\", "/")
+                        # Файл действительно занят — вот теперь есть повод остановить
+                        # движок и драйвер. Делаем это один раз за обновление
+                        # и сразу повторяем запись.
+                        if not locks_released:
+                            locks_released = True
+                            _release_windivert_locks(on_status)
+                            try:
+                                with open(target, "wb") as dst:
+                                    dst.write(data)
+                                extracted += 1
+                                continue
+                            except OSError:
+                                pass
                         # Only kernel drivers (.sys) genuinely require a reboot
                         # to be swapped: Windows keeps a loaded WinDivert driver
                         # locked even after every zapret process is gone.

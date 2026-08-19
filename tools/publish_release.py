@@ -1,9 +1,10 @@
 """Publish a GitHub release for Zapret GUI straight from the repository.
 
 The script talks to the GitHub REST API and takes the token from Git's own
-credential store -- the very same credential ``git push`` already uses. The
-token is never printed and never written to disk. Nothing else is required: no
-GitHub CLI, no environment variables, no manual clicking in the browser.
+credential store -- the very same credential ``git push`` already uses. On a CI
+runner there is no credential store, so GH_TOKEN / GITHUB_TOKEN is used when it
+is set. The token is never printed and never written to disk. Nothing else is
+required: no GitHub CLI, no manual clicking in the browser.
 
 Usage:
     python tools/publish_release.py                 # version from VERSION
@@ -28,6 +29,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -42,7 +44,17 @@ UPLOADS = "https://uploads.github.com"
 
 
 def _token():
-    """Ask Git for the github.com credential. Never logged, never stored."""
+    """Return the GitHub token. Never logged, never stored.
+
+    Order matters. On GitHub Actions the workflow hands the token over through
+    GH_TOKEN (or the built-in GITHUB_TOKEN) and there is no credential helper to
+    ask, while on a developer machine the credential ``git push`` already saved
+    is reused, so nothing has to be configured by hand.
+    """
+    for env_name in ("GH_TOKEN", "GITHUB_TOKEN"):
+        env_token = (os.environ.get(env_name) or "").strip()
+        if env_token:
+            return env_token
     res = subprocess.run(
         ["git", "credential", "fill"],
         input="protocol=https\nhost=github.com\n\n",
@@ -60,8 +72,8 @@ def _token():
             if token:
                 return token
     raise SystemExit(
-        "No github.com token in the Git credential store. Do one `git push` "
-        "first so the credential helper saves it."
+        "No github.com token: neither GH_TOKEN in the environment nor a saved "
+        "credential. Do one `git push` first so the credential helper saves it."
     )
 
 
