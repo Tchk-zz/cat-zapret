@@ -14,6 +14,12 @@ from typing import Optional
 IS_WINDOWS = sys.platform.startswith("win")
 SERVICE_NAME = "zapret"
 _NO_WINDOW = 0x08000000 if IS_WINDOWS else 0
+# sc.exe / schtasks.exe write to the console using the OEM code page (cp866 on
+# ru-RU Windows), not UTF-8. Their output is shown to the user verbatim by
+# install() / start() / stop() / remove(), so decoding it wrong turned every
+# Russian error message into mojibake. app/process_runner.py does the same for
+# winws.exe.
+_OEM_ENCODING = "cp866" if IS_WINDOWS else None
 
 
 class ServiceManager:
@@ -37,8 +43,8 @@ class ServiceManager:
             args,
             capture_output=True,
             text=True,
-            encoding="utf-8",
-            errors="ignore",
+            encoding=_OEM_ENCODING,
+            errors="replace",
             creationflags=_NO_WINDOW,
             **kw,
         )

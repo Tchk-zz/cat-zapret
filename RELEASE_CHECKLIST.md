@@ -6,9 +6,11 @@ PyInstaller, установщик Inno Setup, публикация устано�
 
 Окружение разработчика (для справки):
 
-- Python 3.14 (`C:\Python314\python.exe`), PyQt6, Windows.
-- Git: `C:\Users\Administrator\PortableGit\cmd\git.exe` (может отсутствовать в PATH).
+- Python 3.14 (в PATH, команда `python`), PyQt6, Windows.
+- Git: `C:\Program Files\Git\cmd\git.exe` (в PATH, команда `git`).
 - Inno Setup: `C:\Program Files (x86)\Inno Setup 6\ISCC.exe`.
+- GitHub CLI (`gh`) не установлен: релизы публикуются через REST API
+  (токен берётся из `git credential fill`, см. раздел публикации).
 
 ---
 

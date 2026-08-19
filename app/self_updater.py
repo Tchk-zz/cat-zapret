@@ -58,25 +58,53 @@ class AppRelease:
 # Version helpers
 # ---------------------------------------------------------------------------
 
+def _suffix_key(suffix: str) -> tuple:
+    """Order pre-release suffixes among themselves: alpha < beta < rc1 < rc2.
+
+    The label is compared alphabetically (which happens to give the usual
+    alpha -> beta -> rc order) and the trailing number breaks ties inside one
+    label. Both elements always have the same type, so the tuples returned by
+    _norm stay comparable.
+    """
+    label = "".join(ch for ch in suffix if ch.isalpha())
+    digits = "".join(ch for ch in suffix if ch.isdigit())
+    return (label, int(digits) if digits else 0)
+
+
 def _norm(ver: str) -> tuple:
-    """Convert "v1.8.0" or "1.8.0" -> (1, 8, 0) for comparison.
+    """Convert "v1.8.0", "1.8.0" or "1.9.3-rc1" into a comparable tuple.
 
     Short versions are zero-padded to _VERSION_PARTS components. Without the
     padding Python compares tuples of different length lexicographically, so
     (1, 8) < (1, 8, 0) would be True and the app would report a bogus update
     whenever the tag was written as "v1.8" and VERSION as "1.8.0".
     Extra components are preserved, so "1.8.0.1" still sorts above "1.8.0".
+
+    A pre-release suffix ("1.9.3-rc1", "1.9.3-beta.2") sorts BELOW the final
+    release with the same numbers and above the previous release. Before that
+    every non-numeric part collapsed to 0, so "1.9.3-rc1" was read as
+    (1, 9, 3) -- indistinguishable from the finished 1.9.3 -- and a user on a
+    release candidate was never offered the real release.
     """
-    clean = ver.lstrip("vV").strip()
+    clean = ver.strip().lstrip("vV").strip()
+    # Everything after the first separator is a pre-release / build suffix.
+    positions = [clean.find(s) for s in ("-", "+", " ", "_")]
+    cut = min((p for p in positions if p >= 0), default=-1)
+    if cut >= 0:
+        numeric_text, suffix = clean[:cut], clean[cut + 1:].lower()
+    else:
+        numeric_text, suffix = clean, ""
     parts: list[int] = []
-    for p in clean.split("."):
-        try:
-            parts.append(int(p))
-        except ValueError:
-            parts.append(0)
+    for p in numeric_text.split("."):
+        digits = "".join(ch for ch in p if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
     while len(parts) < _VERSION_PARTS:
         parts.append(0)
-    return tuple(parts)
+    # The release/pre-release flag always sits at the same index, so two
+    # tuples never end up comparing a string against an int.
+    if suffix:
+        return tuple(parts) + (0,) + _suffix_key(suffix)
+    return tuple(parts) + (1,)
 
 
 def local_version() -> str:
@@ -96,6 +124,23 @@ def local_version() -> str:
         return (base / "VERSION").read_text(encoding="utf-8").strip()
     except OSError:
         return ""
+
+
+# ---------------------------------------------------------------------------
+# Process helpers
+# ---------------------------------------------------------------------------
+
+def _cmd_quote(path: str) -> str:
+    """Wrap a path in double quotes for `cmd /c start`.
+
+    Needed because `start` is a cmd builtin: it re-parses the command line
+    itself, so a path with a space in it must arrive already quoted. Already
+    quoted input is returned unchanged so the value is never double-wrapped.
+    """
+    text = str(path)
+    if len(text) > 1 and text.startswith('"') and text.endswith('"'):
+        return text
+    return '"' + text + '"'
 
 
 # ---------------------------------------------------------------------------
@@ -445,8 +490,14 @@ def download_and_launch(
             kwargs["close_fds"] = True
             # The empty "" is the window title argument of `start`; without it
             # a quoted path would be taken as the title and nothing would run.
+            # tmp_path MUST be quoted by hand. `start` is a cmd builtin, so
+            # the quoting subprocess does for a normal argv never reaches it --
+            # cmd re-splits the command line on spaces. Any user whose TEMP
+            # path contains a space ("C:/Users/Ivan Petrov/AppData/...") got a
+            # silent no-op instead of an update, because cmd tried to run
+            # "C:/Users/Ivan" with "Petrov/..." as its argument.
             subprocess.Popen(
-                ["cmd", "/c", "start", "", tmp_path] + silent_args,
+                ["cmd", "/c", "start", "", _cmd_quote(tmp_path)] + silent_args,
                 shell=False, **kwargs
             )
         else:

@@ -906,8 +906,16 @@ class MainWindow(
             return False
         msg = self.service.stop()
         self._log("[\u0441\u043b\u0443\u0436\u0431\u0430] " + msg)
-        # Give WinDivert a moment to release the filter before we re-grab it.
-        QTimer.singleShot(500, lambda: None)
+        # Give WinDivert a moment to actually release the filter before we
+        # re-grab it. This used to be QTimer.singleShot(500, lambda: None),
+        # which scheduled an empty callback and returned immediately: the wait
+        # never happened and winws.exe was launched while the driver handle was
+        # still held -- the exact conflict this function exists to prevent.
+        # Sleeping on the GUI thread is deliberate; a nested event loop would
+        # let the user press "Start" again in the middle of the stop sequence.
+        import time as _time
+
+        _time.sleep(0.6)
         return True
 
     def start_engine(self) -> None:
@@ -939,6 +947,11 @@ class MainWindow(
                 self,
                 error_style=True,
             ).exec()
+            # winws never started, so skip the Telegram-proxy autostart below
+            # and only refresh the buttons. Without this return the app showed
+            # the error popup and then continued as if the bypass was running.
+            self._refresh_status()
+            return
         # Auto-start the Telegram proxy if the user asked for it.
         if getattr(self.config, "tg_proxy_autostart_with_zapret", False) and not self.tg_runner.is_running():
             self._tg_ensure_installed_then(start_after=True)

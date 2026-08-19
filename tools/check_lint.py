@@ -8,7 +8,7 @@ Two deliberate exceptions:
   and then dropped the results, so the "known findings" counter silently grew
   from 3 to 65 whenever the vendored engine changed -- and a real problem in
   our own code could hide inside that pile.
-* ``import app.tg_proxy  # noqa: F401`` in ``tests/test_core_logic.py`` exists
+* ``import app.tg_proxy  # noqa: F401`` in ``tests/test_tg_proxy_logic.py`` exists
   purely to prove the module imports cleanly, so pyflakes reports it as an
   unused import. That single finding stays ignored.
 

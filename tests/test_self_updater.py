@@ -93,7 +93,26 @@ class VersionHelperTests(unittest.TestCase):
         self.assertGreater(su._norm("1.8.10"), su._norm("1.8.9"))
 
     def test_garbage_component_does_not_crash(self):
-        self.assertEqual(su._norm("1.8.beta"), (1, 8, 0))
+        # Only the numeric prefix is compared; _norm appends a release flag
+        # after it, hence the slice.
+        self.assertEqual(su._norm("1.8.beta")[:3], (1, 8, 0))
+
+    def test_release_candidate_sorts_below_final_release(self):
+        # "1.9.3-rc1" used to normalize to (1, 9, 3) -- the very same tuple as
+        # the finished release -- so a user sitting on the rc was never
+        # offered the real 1.9.3.
+        self.assertLess(su._norm("v1.9.3-rc1"), su._norm("v1.9.3"))
+        self.assertGreater(su._norm("v1.9.3-rc1"), su._norm("v1.9.2"))
+
+    def test_prereleases_are_ordered_among_themselves(self):
+        self.assertLess(su._norm("1.9.3-alpha"), su._norm("1.9.3-beta"))
+        self.assertLess(su._norm("1.9.3-beta.1"), su._norm("1.9.3-beta.2"))
+        self.assertLess(su._norm("1.9.3-beta.2"), su._norm("1.9.3-rc1"))
+
+    def test_build_metadata_is_not_newer_than_the_release(self):
+        # A local build tag must never look newer than the published release
+        # with the same numbers.
+        self.assertLessEqual(su._norm("1.9.3+build7"), su._norm("1.9.3"))
 
     def test_local_version_matches_version_file(self):
         root = Path(__file__).resolve().parent.parent
@@ -317,6 +336,46 @@ class DownloadAndLaunchTests(unittest.TestCase):
         self.assertTrue(seen)
         self.assertEqual(seen[-1], 100)
         self.assertTrue(all(0 <= p <= 100 for p in seen))
+
+
+class InstallerLaunchQuotingTests(unittest.TestCase):
+    """`start` is a cmd builtin, so the installer path must arrive quoted."""
+
+    def test_cmd_quote_wraps_and_never_double_wraps(self):
+        self.assertEqual(su._cmd_quote("C:/a b/x.exe"), '"C:/a b/x.exe"')
+        self.assertEqual(su._cmd_quote('"C:/a b/x.exe"'), '"C:/a b/x.exe"')
+
+    @unittest.skipUnless(su.sys.platform == "win32", "cmd /c start is Windows-only")
+    def test_installer_path_with_space_is_quoted(self):
+        # Every "Ivan Petrov" account has a space in %TEMP%. Unquoted, cmd
+        # split the path and the silent update simply did nothing.
+        chunks = (b"setup",)
+        rel = su.AppRelease(
+            tag="v9.9.9",
+            version="9.9.9",
+            download_url="https://example.invalid/" + su.INSTALLER_ASSET,
+            size=len(chunks[0]),
+            sha256=hashlib.sha256(chunks[0]).hexdigest(),
+        )
+        stub = _FakeRequests(
+            _FakeResponse(chunks=chunks, headers={"Content-Length": str(len(chunks[0]))})
+        )
+        with tempfile.TemporaryDirectory() as td:
+            spaced = Path(td) / "Local Temp"
+            spaced.mkdir()
+            changelog_path = Path(td) / "pending_update.json"
+            with mock.patch.object(su.tempfile, "gettempdir", return_value=str(spaced)), \
+                    mock.patch.object(su, "_requests", stub), \
+                    mock.patch.object(su, "pending_changelog_path", return_value=changelog_path), \
+                    mock.patch.object(su.subprocess, "Popen") as popen:
+                result = su.download_and_launch(rel)
+                argv = list(popen.call_args[0][0])
+        self.assertEqual(result, "ok")
+        self.assertEqual(argv[:4], ["cmd", "/c", "start", ""])
+        self.assertTrue(argv[4].startswith('"'))
+        self.assertTrue(argv[4].endswith('"'))
+        self.assertIn("Local Temp", argv[4])
+        self.assertIn("/VERYSILENT", argv)
 
 
 if __name__ == "__main__":

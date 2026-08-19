@@ -1,7 +1,8 @@
 """Smoke tests for the PyQt6 GUI layer (MainWindow).
 
 These tests don't try to validate behaviour — they exist to catch REGRESSIONS
-in code that the existing logic-only tests in ``test_core_logic.py`` cannot
+in code that the existing logic-only test modules (``test_tg_proxy_logic.py``
+and friends) cannot
 reach:
 
   * every theme in the catalog can be applied via ``_apply_theme`` without

@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest import mock
 
 from app import autostart
+from app import service_manager as sm_module
 from app.service_manager import SERVICE_NAME, ServiceManager
 
 
@@ -66,7 +67,8 @@ class AutostartEnableTests(unittest.TestCase):
         rec = _Recorder(returncode=0)
         with mock.patch.object(autostart, "subprocess") as sp:
             sp.run = rec
-            with mock.patch.object(autostart, "enable_run") as fallback:
+            with mock.patch.object(autostart, "disable_run"), \
+                    mock.patch.object(autostart, "enable_run") as fallback:
                 autostart.enable()
         cmd = rec.commands()[0]
         self.assertEqual(cmd[:4], ["schtasks", "/Create", "/TN", autostart.TASK_NAME])
@@ -80,9 +82,25 @@ class AutostartEnableTests(unittest.TestCase):
         rec = _Recorder(returncode=1, stderr="access denied")
         with mock.patch.object(autostart, "subprocess") as sp:
             sp.run = rec
-            with mock.patch.object(autostart, "enable_run") as fallback:
+            with mock.patch.object(autostart, "disable_run") as drop_key, \
+                    mock.patch.object(autostart, "enable_run") as fallback:
                 autostart.enable(minimized=True)
         fallback.assert_called_once_with(True)
+        # Here the Run key IS the autostart mechanism, so it must survive.
+        drop_key.assert_not_called()
+
+    def test_enable_drops_a_stale_run_key_once_the_task_exists(self):
+        # With both mechanisms armed the app launched TWICE at logon: the
+        # second instance lost the WinDivert race and died, which users saw as
+        # a random crash right after signing in.
+        rec = _Recorder(returncode=0)
+        with mock.patch.object(autostart, "subprocess") as sp:
+            sp.run = rec
+            with mock.patch.object(autostart, "disable_run") as drop_key, \
+                    mock.patch.object(autostart, "enable_run") as fallback:
+                autostart.enable()
+        drop_key.assert_called_once_with()
+        fallback.assert_not_called()
 
     def test_disable_removes_both_mechanisms(self):
         rec = _Recorder(returncode=0)
@@ -347,6 +365,32 @@ class ServiceStartStopRemoveTests(unittest.TestCase):
             self.assertIn("Windows", svc.remove())
             self.assertFalse(svc.is_installed())
             self.assertEqual(svc.calls, [])
+
+
+class ServiceOutputEncodingTests(unittest.TestCase):
+    """sc.exe / schtasks.exe speak the OEM code page, not UTF-8.
+
+    Their output is handed straight to the user by install() / start() /
+    stop() / remove(), so decoding it as UTF-8 replaced every Russian error
+    message with mojibake and the UI showed unreadable garbage instead of
+    "Отказано в доступе".
+    """
+
+    def test_run_decodes_console_output_with_the_oem_code_page(self):
+        mgr = ServiceManager(Path(tempfile.gettempdir()))
+        rec = _Recorder(returncode=0)
+        with mock.patch.object(sm_module.subprocess, "run", rec):
+            mgr._run(["sc", "query", SERVICE_NAME])
+        _cmd, kwargs = rec.calls[0]
+        self.assertEqual(kwargs["encoding"], sm_module._OEM_ENCODING)
+        # "replace" keeps an unexpected byte visible instead of dropping the
+        # character silently, which used to hide whole words.
+        self.assertEqual(kwargs["errors"], "replace")
+
+    def test_oem_code_page_is_windows_only(self):
+        self.assertEqual(
+            sm_module._OEM_ENCODING, "cp866" if sm_module.IS_WINDOWS else None
+        )
 
 
 if __name__ == "__main__":

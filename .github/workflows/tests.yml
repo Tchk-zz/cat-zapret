@@ -41,7 +41,7 @@ jobs:
 
       # tools/check_lint.py wraps pyflakes: it skips the vendored
       # app/tg_proxy_engine/ package, ignores the single import-proof line in
-      # tests/test_core_logic.py and fails on everything else. Calling pyflakes
+      # tests/test_tg_proxy_logic.py and fails on everything else. Calling pyflakes
       # directly would keep CI permanently red because of the vendored code.
       - name: Static analysis (pyflakes)
         run: python tools/check_lint.py

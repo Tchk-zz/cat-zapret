@@ -88,6 +88,12 @@ def enable(minimized: bool = False) -> None:
         # to the Run key — user will get a UAC prompt, but autostart at least
         # works.
         enable_run(minimized)
+        return
+    # The task exists now, so drop any leftover Run-key entry (older versions
+    # used it, and so does the fallback above). Leaving both in place made the
+    # app start TWICE at logon: the second instance races the first for
+    # WinDivert and dies with a conflict, which looked like a random crash.
+    disable_run()
 
 
 def disable() -> None:
