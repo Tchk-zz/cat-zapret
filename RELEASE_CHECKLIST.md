@@ -9,8 +9,11 @@ PyInstaller, установщик Inno Setup, публикация устано�
 - Python 3.14 (в PATH, команда `python`), PyQt6, Windows.
 - Git: `C:\Program Files\Git\cmd\git.exe` (в PATH, команда `git`).
 - Inno Setup: `C:\Program Files (x86)\Inno Setup 6\ISCC.exe`.
-- GitHub CLI (`gh`) не установлен: релизы публикуются через REST API
-  (токен берётся из `git credential fill`, см. раздел публикации).
+- GitHub CLI (`gh`) 2.97.0 — установлен (`winget install --id GitHub.cli`),
+  но для релиза не обязателен и отдельной авторизации не требует.
+- Публикация: `python tools/publish_release.py` — REST API GitHub, токен
+  берётся из `git credential fill` (тот же, что у `git push`), никуда не
+  печатается и не сохраняется. См. раздел публикации.
 
 ---
 
