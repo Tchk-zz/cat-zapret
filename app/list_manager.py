@@ -4,7 +4,7 @@ The original Flowseal bundle exposes menu actions such as "Update IPset list"
 and "Update Hosts File". In ZapretGUI we keep the same idea but make it safer:
 
 * list updates touch only upstream-owned zapret list files under ``lists/`` and
-  ``.service/hosts``;
+  service data under ``.service/``;
 * user files (``*-user.txt``), custom strategies and config are never touched;
 * Windows ``hosts`` is never changed in the background — the GUI shows the
   generated block and applies it only after an explicit user action.
@@ -15,6 +15,7 @@ import io
 import ipaddress
 import os
 import shutil
+import stat
 import sys
 import time
 import zipfile
@@ -66,9 +67,16 @@ def _is_upstream_list(rel_path: str) -> bool:
     return True
 
 
-def _is_hosts_template(rel_path: str) -> bool:
+_SERVICE_DATA_FILES = {
+    ".service/hosts",
+    ".service/ipset-service.txt",
+    ".service/version.txt",
+}
+
+
+def _is_service_data(rel_path: str) -> bool:
     rel = rel_path.replace("\\", "/").lstrip("/").lower()
-    return rel == ".service/hosts"
+    return rel in _SERVICE_DATA_FILES
 
 
 def _safe_rel_path(rel_path: str) -> Optional[Path]:
@@ -84,11 +92,12 @@ def update_zapret_lists(
     timeout: float = 60.0,
     progress_cb: Optional[Callable[[str], None]] = None,
 ) -> ListUpdateResult:
-    """Download latest Flowseal release and update only list/hosts data.
+    """Atomically refresh lists, IPSet and hidden ``.service`` data.
 
-    This is intentionally narrower than a full zapret update. It refreshes
-    ``lists/*.txt`` (except user-managed ``*-user.txt`` files) and the
-    ``.service/hosts`` template used by the HOSTS dialog.
+    Flowseal's Windows release asset omits the hidden ``.service`` directory.
+    We therefore merge service data from the tagged source zipball, while
+    continuing to take runtime binaries/lists from the verified release asset.
+    Every ``lists/*-user.txt`` file remains strictly user-owned.
     """
     def report(msg: str) -> None:
         if progress_cb is not None:
@@ -105,78 +114,187 @@ def update_zapret_lists(
             message="Не удалось получить релиз zapret с GitHub.",
         )
 
-    report("Загрузка списков zapret " + (rel.tag or "") + "...")
-    try:
-        r = requests.get(rel.zip_url, timeout=timeout)
-        r.raise_for_status()
-    except Exception as exc:  # noqa: BLE001
-        return ListUpdateResult(False, message="Ошибка загрузки списков: " + str(exc))
+    source_url = getattr(rel, "source_zip_url", None)
+    downloads = [(rel.zip_url, False)]
+    if source_url and source_url != rel.zip_url:
+        downloads.append((source_url, True))
 
-    updated = 0
+    payloads = []
+    for url, service_only in downloads:
+        label = "служебных HOSTS/IPSet" if service_only else "списков"
+        report("Загрузка " + label + " zapret " + (rel.tag or "") + "...")
+        try:
+            response = requests.get(url, timeout=timeout)
+            response.raise_for_status()
+            raw_length = getattr(response, "headers", {}).get(
+                "Content-Length", "0"
+            )
+            try:
+                content_length = int(raw_length or 0)
+            except (TypeError, ValueError):
+                content_length = 0
+            if content_length > updater.MAX_DOWNLOAD_BYTES:
+                raise ValueError("архив превышает безопасный размер")
+            payload = response.content
+            if len(payload) > updater.MAX_DOWNLOAD_BYTES:
+                raise ValueError("архив превышает безопасный размер")
+        except Exception as exc:  # noqa: BLE001
+            return ListUpdateResult(
+                False,
+                message="Ошибка загрузки " + label + ": " + str(exc),
+            )
+        if (
+            not service_only
+            and getattr(rel, "digest_verified", False)
+            and getattr(rel, "digest", None)
+            and updater._sha256_hex(payload).lower() != rel.digest.lower()
+        ):
+            return ListUpdateResult(
+                False,
+                message="SHA-256 архива списков zapret не совпадает.",
+            )
+        payloads.append((payload, service_only))
+
+    prepared: dict[str, bytes] = {}
     skipped = 0
-    unchanged = 0
-    checked = 0
     try:
-        with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
-            root = updater._common_root(zf.namelist())
-            for member in zf.namelist():
-                norm = member.replace("\\", "/")
-                rel = norm[len(root):] if root and norm.startswith(root) else norm
-                if not rel or norm.endswith("/"):
-                    continue
-                if not (_is_upstream_list(rel) or _is_hosts_template(rel)):
-                    continue
-                safe = _safe_rel_path(rel)
-                if safe is None:
-                    skipped += 1
-                    continue
-                target = Path(zapret_dir) / safe
-                try:
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    data = zf.read(member)
+        for payload, service_only in payloads:
+            with zipfile.ZipFile(io.BytesIO(payload)) as zf:
+                infos = zf.infolist()
+                if len(infos) > updater.MAX_ARCHIVE_ENTRIES:
+                    raise ValueError("слишком много файлов в архиве")
+                total_size = 0
+                for info in infos:
+                    total_size += info.file_size
+                    if info.file_size > updater.MAX_MEMBER_BYTES:
+                        raise ValueError(
+                            "файл превышает безопасный размер: " + info.filename
+                        )
+                    if total_size > updater.MAX_UNCOMPRESSED_BYTES:
+                        raise ValueError(
+                            "распакованный архив превышает безопасный размер"
+                        )
+                    if info.flag_bits & 0x1:
+                        raise ValueError("зашифрованный архив не поддерживается")
+                    mode = (info.external_attr >> 16) & 0xFFFF
+                    if stat.S_ISLNK(mode):
+                        raise ValueError(
+                            "символическая ссылка в архиве: " + info.filename
+                        )
+                root = updater._common_root(
+                    [info.filename for info in infos]
+                )
+                for info in infos:
+                    norm = info.filename.replace("\\", "/")
+                    rel_path = (
+                        norm[len(root):]
+                        if root and norm.startswith(root)
+                        else norm
+                    )
+                    if not rel_path or info.is_dir():
+                        continue
+                    wanted = _is_service_data(rel_path)
+                    if not service_only:
+                        wanted = wanted or _is_upstream_list(rel_path)
+                    if not wanted:
+                        continue
+                    safe = _safe_rel_path(rel_path)
+                    if safe is None:
+                        skipped += 1
+                        continue
+                    data = zf.read(info)
                     if not data.strip():
                         skipped += 1
                         continue
-                    checked += 1
-                    try:
-                        old = target.read_bytes() if target.exists() else None
-                    except OSError:
-                        old = None
-                    if old == data:
-                        unchanged += 1
-                        report("Без изменений: " + rel)
-                        continue
-                    tmp = target.with_suffix(target.suffix + ".tmp")
-                    tmp.write_bytes(data)
-                    os.replace(tmp, target)
-                    updated += 1
-                    report("Обновлён список: " + rel)
-                except OSError:
-                    skipped += 1
+                    prepared[safe.as_posix()] = data
     except zipfile.BadZipFile:
         return ListUpdateResult(False, message="Скачанный архив повреждён.")
     except Exception as exc:  # noqa: BLE001
-        return ListUpdateResult(False, message="Ошибка распаковки списков: " + str(exc))
+        return ListUpdateResult(
+            False, message="Ошибка подготовки списков: " + str(exc)
+        )
 
-    if checked <= 0:
+    if source_url:
+        required = {
+            "lists/list-general.txt",
+            "lists/list-exclude.txt",
+            "lists/ipset-all.txt",
+            ".service/hosts",
+            ".service/ipset-service.txt",
+        }
+        missing = sorted(required - set(prepared))
+        if missing:
+            return ListUpdateResult(
+                False,
+                skipped=skipped,
+                message=(
+                    "Полный комплект списков неполный, отсутствуют: "
+                    + ", ".join(missing)
+                    + "."
+                ),
+            )
+
+    if not prepared:
+        return ListUpdateResult(
+            False,
+            skipped=skipped,
+            message="В релизе не найдено подходящих list/IPSet/HOSTS файлов.",
+        )
+
+    updated = 0
+    unchanged = 0
+    backups: dict[Path, Optional[bytes]] = {}
+    try:
+        for rel_path, data in sorted(prepared.items()):
+            target = Path(zapret_dir) / rel_path
+            try:
+                old = target.read_bytes() if target.exists() else None
+            except OSError:
+                old = None
+            if old == data:
+                unchanged += 1
+                report("Без изменений: " + rel_path)
+                continue
+            backups[target] = old
+            target.parent.mkdir(parents=True, exist_ok=True)
+            tmp = target.with_name(target.name + ".tmp")
+            tmp.write_bytes(data)
+            os.replace(tmp, target)
+            updated += 1
+            report("Обновлён список: " + rel_path)
+    except OSError as exc:
+        for target, old in reversed(list(backups.items())):
+            try:
+                if old is None:
+                    target.unlink(missing_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(old)
+            except OSError:
+                _log.error("list update rollback failed for %s", target, exc_info=True)
         return ListUpdateResult(
             False,
             updated=0,
-            skipped=skipped,
+            skipped=skipped + 1,
             unchanged=unchanged,
-            message="В релизе не найдено подходящих list/ipset/hosts файлов.",
+            message="Не удалось атомарно обновить списки: " + str(exc),
         )
+
     if updated <= 0:
-        msg = f"Списки/IPset уже актуальны: проверено {checked} файлов."
-        if skipped:
-            msg += f" Пропущено: {skipped}."
-        return ListUpdateResult(True, updated=0, skipped=skipped, unchanged=unchanged, message=msg)
-    msg = f"Списки обновлены: {updated} файлов."
+        msg = f"Списки/HOSTS/IPSet уже актуальны: проверено {len(prepared)} файлов."
+    else:
+        msg = f"Списки/HOSTS/IPSet обновлены: {updated} файлов."
     if unchanged:
         msg += f" Без изменений: {unchanged}."
     if skipped:
         msg += f" Пропущено: {skipped}."
-    return ListUpdateResult(True, updated=updated, skipped=skipped, unchanged=unchanged, message=msg)
+    return ListUpdateResult(
+        True,
+        updated=updated,
+        skipped=skipped,
+        unchanged=unchanged,
+        message=msg,
+    )
 
 
 def _valid_hostname(host: str) -> bool:

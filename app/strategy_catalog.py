@@ -142,11 +142,11 @@ def delete_bat_files(zapret_dir: Path) -> int:
     return removed
 
 
-def rebuild_from_bats(zapret_dir: Path, delete_bats: bool = True) -> int:
-    """Convert the Flowseal .bat recipes into our catalog, then drop the .bat.
+def rebuild_from_bats(zapret_dir: Path, delete_bats: bool = False) -> int:
+    """Convert Flowseal BAT recipes into the catalog.
 
-    Returns the number of strategies written. If nothing parsed (no .bat / no
-    winws lines) the existing catalog and files are left untouched.
+    BAT removal is opt-in for legacy callers; normal app/update flows retain the
+    complete upstream bundle, including service.bat. Returns strategies written.
     """
     zapret_dir = Path(zapret_dir)
     cat = build_catalog(zapret_dir)
@@ -164,7 +164,7 @@ def ensure_catalog(zapret_dir: Path) -> Path:
 
     Priority:
       1. An existing runtime strategies.json -> use as-is (normal case).
-      2. Foreign .bat still present (fresh download) -> convert once, delete .bat.
+      2. Upstream .bat present (fresh download) -> convert and retain them.
       3. The prebuilt seed bundled with the app -> copy it in.
     """
     zapret_dir = Path(zapret_dir)
@@ -173,7 +173,7 @@ def ensure_catalog(zapret_dir: Path) -> Path:
         return path
     try:
         if any(zapret_dir.glob("*.bat")):
-            if rebuild_from_bats(zapret_dir, delete_bats=True) > 0:
+            if rebuild_from_bats(zapret_dir, delete_bats=False) > 0:
                 return path
     except OSError:
         pass

@@ -201,14 +201,9 @@ def bundled_zapret_dir() -> Optional[Path]:
 
 
 def _install_from_bundle(src: Path, dst: Path) -> int:
-    """Copy the embedded bundle into the working dir. Returns file count."""
-    protected = {
-        "config.json",
-        "custom_strategies",
-        updater.INSTALLED_MARKER,
-        updater.INSTALLED_SHA256_MARKER,
-    }
+    """Copy a complete embedded bundle while preserving every user-owned file."""
     count = 0
+    managed = []
     for item in src.rglob("*"):
         if item.is_dir():
             continue
@@ -216,27 +211,50 @@ def _install_from_bundle(src: Path, dst: Path) -> int:
             rel = item.relative_to(src)
         except ValueError:
             continue
-        if rel.parts and rel.parts[0] in protected:
+        rel_path = rel.as_posix()
+        if updater._is_preserved_path(rel_path):
             continue
         target = dst / rel
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(item, target)
+            managed.append(rel_path)
             count += 1
         except OSError:
             pass
+
+    if count:
+        # Embedded installs need the same provenance/ownership metadata as a
+        # network update, otherwise first launch immediately offers the same
+        # release and stale upstream files can never be cleaned safely.
+        tag = updater.local_version(src)
+        try:
+            updater._save_managed_files(dst, tag, managed)
+        except OSError:
+            pass
+        if tag:
+            updater.save_local_version(dst, tag)
+        try:
+            digest = (src / updater.INSTALLED_SHA256_MARKER).read_text(
+                encoding="utf-8"
+            ).strip()
+        except OSError:
+            digest = ""
+        if digest:
+            updater._save_installed_sha256(dst, digest)
     return count
 
 
 def _finalize_install(zapret_dir: Path) -> None:
-    """Convert freshly downloaded Flowseal .bat into our catalog and delete the
-    .bat. If no .bat are present, make sure a catalog exists (seeded from the
-    copy bundled with the app)."""
+    """Convert Flowseal recipes into our catalog while retaining upstream BATs.
+
+    If no BAT is present, make sure a seed catalog still exists.
+    """
     from . import strategy_catalog
 
     try:
         if any(Path(zapret_dir).glob("*.bat")):
-            strategy_catalog.rebuild_from_bats(zapret_dir, delete_bats=True)
+            strategy_catalog.rebuild_from_bats(zapret_dir, delete_bats=False)
         else:
             strategy_catalog.ensure_catalog(zapret_dir)
     except Exception:

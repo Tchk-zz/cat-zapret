@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import os
 import stat
 import subprocess
@@ -53,6 +54,12 @@ REPO_VERSION_FILES = ("version.txt", ".version", "version")
 
 
 REBOOT_PENDING_MARKER = ".zapret_gui_reboot_required"
+MANIFEST_FILENAME = ".zapret_gui_manifest.json"
+MANIFEST_VERSION = 1
+
+# User-owned files must survive every full bundle update, even if a future
+# upstream archive starts shipping placeholders with the same names.
+_PRESERVED_RUNTIME_PATHS = {"utils/game_filter.enabled"}
 
 # Defensive archive limits. The official bundle is only a few MiB; these
 # generous caps reject zip bombs/corrupt releases before any file is replaced.
@@ -146,6 +153,10 @@ class ReleaseInfo:
     # re-downloads: GitHub-provided digests are mandatory; local ones are
     # informational only.
     digest_verified: bool = False
+    # Release assets intentionally omit Flowseal's hidden .service directory.
+    # Keep the tag source zipball so HOSTS/IPSet service data can be merged into
+    # the otherwise verified official bundle.
+    source_zip_url: Optional[str] = None
 
 
 def _norm(tag: str) -> str:
@@ -218,6 +229,7 @@ def latest_release(timeout: float = 10.0) -> Optional[ReleaseInfo]:
         html_url=data.get("html_url", RELEASES_URL),
         digest=digest,
         digest_verified=digest_verified,
+        source_zip_url=data.get("zipball_url"),
     )
 
 
@@ -249,7 +261,7 @@ def _common_root(names) -> str:
     would have its top folder stripped and the file extracted to the wrong path.
     """
     # Known top-level content folders shipped by Flowseal's zapret bundle.
-    _CONTENT_TOPS = {"bin", "lists", "utils", "corz", "opt", "src", "docs"}
+    _CONTENT_TOPS = {".service", "bin", "lists", "utils", "corz", "opt", "src", "docs"}
     norm = [n.replace("\\", "/") for n in names if n and not n.startswith("__MACOSX")]
     if not norm:
         return ""
@@ -268,6 +280,74 @@ def _common_root(names) -> str:
 def _sha256_hex(data: bytes) -> str:
     """Compute the SHA-256 hex digest of ``data`` (lowercase, no separator)."""
     return hashlib.sha256(data).hexdigest()
+
+
+def _normalise_rel_path(rel_path: str) -> str:
+    """Return a slash-normalised relative archive path."""
+    rel = (rel_path or "").replace("\\", "/")
+    while rel.startswith("./"):
+        rel = rel[2:]
+    return rel
+
+
+def _is_preserved_path(rel_path: str) -> bool:
+    """True for app/user-owned paths that an upstream archive cannot replace."""
+    rel = _normalise_rel_path(rel_path)
+    if not rel:
+        return True
+    parts = rel.split("/")
+    top = parts[0].casefold()
+    internal = {
+        "config.json",
+        "custom_strategies",
+        "strategies.json",
+        INSTALLED_MARKER.casefold(),
+        INSTALLED_SHA256_MARKER.casefold(),
+        REBOOT_PENDING_MARKER.casefold(),
+        MANIFEST_FILENAME.casefold(),
+    }
+    if top in internal or top.startswith(".zapret_gui_"):
+        return True
+    if top == "lists" and parts[-1].casefold().endswith("-user.txt"):
+        return True
+    return rel.casefold() in _PRESERVED_RUNTIME_PATHS
+
+
+def _load_managed_files(zapret_dir: Path) -> set[str]:
+    """Load files owned by the previous upstream bundle, if known."""
+    path = Path(zapret_dir) / MANIFEST_FILENAME
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return set()
+    result: set[str] = set()
+    for raw in data.get("files", []) if isinstance(data, dict) else []:
+        if not isinstance(raw, str):
+            continue
+        rel = _normalise_rel_path(raw)
+        parts = Path(rel).parts
+        if not rel or Path(rel).is_absolute() or ".." in parts or _is_preserved_path(rel):
+            continue
+        result.add(rel)
+    return result
+
+
+def _save_managed_files(zapret_dir: Path, tag: str, files) -> None:
+    """Atomically record the exact upstream files installed for stale cleanup."""
+    path = Path(zapret_dir) / MANIFEST_FILENAME
+    payload = {
+        "version": MANIFEST_VERSION,
+        "source": REPO,
+        "tag": _norm(tag),
+        "files": sorted({_normalise_rel_path(str(item)) for item in files}),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(tmp, path)
 
 
 def _load_installed_sha256(zapret_dir: Path) -> str:
@@ -401,13 +481,37 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
                 "\u0443\u0434\u0430\u043b\u0438\u0442\u0435 \u0444\u0430\u0439\u043b " + INSTALLED_SHA256_MARKER + " \u0438 \u043f\u043e\u0432\u0442\u043e\u0440\u0438\u0442\u0435."
             )
 
+    # The official release asset omits dot-directories on Windows. Download the
+    # immutable tag zipball as a supplement and merge only .service/* from it.
+    # This is why older GUI updates refreshed strategies/lists but never HOSTS
+    # or ipset-service.txt. Fetch it before touching the live installation.
+    source_payload = None
+    if rel.source_zip_url and rel.source_zip_url != rel.zip_url:
+        if on_status:
+            on_status(
+                "Загрузка служебных HOSTS/IPSet файлов "
+                + (rel.tag or "zapret")
+                + "..."
+            )
+        try:
+            source_payload = _download(
+                rel.source_zip_url, rel.tag, timeout, on_status
+            )
+        except Exception as exc:  # noqa: BLE001
+            return "Ошибка загрузки полного комплекта zapret: " + str(exc)
+        if len(source_payload) > MAX_DOWNLOAD_BYTES:
+            return "Исходный архив zapret слишком большой. Обновление отменено."
+
     # Блокировки снимаем лениво. Раньше апдейтер на КАЖДОМ обновлении
     # убивал winws.exe и удалял службы WinDivert ещё до распаковки — даже
     # если ни один файл не был занят и пользователь нарочно держал обход
     # включённым. Теперь — только при реальной ошибке записи и один раз.
     locks_released = False
 
-    protected = {"config.json", "custom_strategies", INSTALLED_MARKER, INSTALLED_SHA256_MARKER, REBOOT_PENDING_MARKER}
+    old_managed = _load_managed_files(zapret_dir)
+    new_managed: set[str] = set()
+    write_failures: list[str] = []
+    removed_stale = 0
     extracted = 0
     skipped = 0
     skipped_paths = []
@@ -459,6 +563,73 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
         if rel_norm in critical_names or is_engine_binary:
             critical_skipped.append(rel_norm)
 
+    def _install_bytes(rel_path: str, data: bytes) -> None:
+        """Install one validated member while preserving rollback information."""
+        nonlocal extracted, locks_released
+        rel_norm = _normalise_rel_path(rel_path)
+        if _is_preserved_path(rel_norm):
+            return
+        rel_parts = Path(rel_norm).parts
+        if Path(rel_norm).is_absolute() or ".." in rel_parts:
+            _record_skip(rel_norm)
+            return
+        target = zapret_dir / rel_norm
+        try:
+            target_resolved = target.resolve(strict=False)
+            if os.path.commonpath(
+                [str(root_resolved), str(target_resolved)]
+            ) != str(root_resolved):
+                _record_skip(rel_norm)
+                write_failures.append(rel_norm)
+                return
+        except (OSError, ValueError):
+            _record_skip(rel_norm)
+            write_failures.append(rel_norm)
+            return
+
+        new_managed.add(rel_norm)
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            _remember_original(target)
+            try:
+                with open(target, "wb") as dst:
+                    dst.write(data)
+                extracted += 1
+                return
+            except OSError:
+                if not locks_released:
+                    locks_released = True
+                    _release_windivert_locks(on_status)
+                    try:
+                        with open(target, "wb") as dst:
+                            dst.write(data)
+                        extracted += 1
+                        return
+                    except OSError:
+                        pass
+                if rel_norm.lower().endswith(".sys"):
+                    pending_path = target.with_name(
+                        target.name + ".zapretgui.new"
+                    )
+                    _remember_original(pending_path)
+                    if _schedule_replace_on_reboot(target, data):
+                        pending_reboot.append(rel_norm)
+                        extracted += 1
+                        if on_status:
+                            on_status(
+                                "Файл занят, замена запланирована после перезагрузки: "
+                                + rel_norm
+                            )
+                        return
+                raise
+        except OSError:
+            _record_skip(rel_norm)
+            write_failures.append(rel_norm)
+            if on_status:
+                on_status("Не удалось заменить файл: " + rel_norm)
+
+    root_resolved = zapret_dir.resolve()
+
     try:
         with zipfile.ZipFile(io.BytesIO(payload)) as zf:
             infos = zf.infolist()
@@ -485,19 +656,36 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
                  else name.replace("\\", "/"))
                 for name in names
             }
-            required = {"bin/winws.exe", "bin/WinDivert.dll", "bin/WinDivert64.sys"}
+            required = {
+                "bin/winws.exe",
+                "bin/WinDivert.dll",
+                "bin/WinDivert64.sys",
+            }
+            if rel.source_zip_url:
+                # Normal GitHub releases use the verified Windows asset as the
+                # primary archive. Calling that update complete is only valid
+                # when it also carries the runtime lists and service launcher.
+                required.update({
+                    "lists/list-general.txt",
+                    "lists/list-exclude.txt",
+                    "lists/ipset-all.txt",
+                    "service.bat",
+                })
             missing = sorted(required - rel_names)
-            if missing or not any(name.lower().endswith(".bat") for name in rel_names):
-                detail = ", ".join(missing) if missing else "стратегии *.bat"
+            has_strategy = any(
+                "/" not in name
+                and Path(name).name.casefold().startswith("general")
+                and name.casefold().endswith(".bat")
+                for name in rel_names
+            )
+            if missing or not has_strategy:
+                detail = ", ".join(missing) if missing else "стратегии general*.bat"
                 return "Архив zapret неполный, отсутствуют: " + detail + "."
             root_resolved = zapret_dir.resolve()
             for member in names:
                 norm = member.replace("\\", "/")
                 rel_path = norm[len(root):] if root and norm.startswith(root) else norm
                 if not rel_path or member.endswith("/"):
-                    continue
-                top = rel_path.split("/")[0]
-                if top in protected:
                     continue
                 rel_parts = Path(rel_path).parts
                 # Security: never allow a malicious/corrupt archive entry to
@@ -507,67 +695,124 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
                     if on_status:
                         on_status("Пропущен небезопасный путь в архиве: " + rel_path)
                     continue
-                target = zapret_dir / rel_path
-                # Defend against a pre-existing symlink/junction inside the
-                # install tree redirecting a safe-looking archive path outside.
-                try:
-                    target_resolved = target.resolve(strict=False)
-                    if os.path.commonpath([str(root_resolved), str(target_resolved)]) != str(root_resolved):
-                        _record_skip(rel_path)
-                        continue
-                except (OSError, ValueError):
-                    _record_skip(rel_path)
-                    continue
-                # A locked/in-use file (e.g. winws.exe/service/AV holding it)
-                # must NOT crash the updater. But if a critical bin/* file is
-                # skipped, report a partial update instead of a success.
-                try:
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    _remember_original(target)
-                    with zf.open(member) as src:
-                        data = src.read()
-                    try:
-                        with open(target, "wb") as dst:
-                            dst.write(data)
-                        extracted += 1
-                    except OSError:
-                        rel_norm = rel_path.replace("\\", "/")
-                        # Файл действительно занят — вот теперь есть повод остановить
-                        # движок и драйвер. Делаем это один раз за обновление
-                        # и сразу повторяем запись.
-                        if not locks_released:
-                            locks_released = True
-                            _release_windivert_locks(on_status)
-                            try:
-                                with open(target, "wb") as dst:
-                                    dst.write(data)
-                                extracted += 1
-                                continue
-                            except OSError:
-                                pass
-                        # Only kernel drivers (.sys) genuinely require a reboot
-                        # to be swapped: Windows keeps a loaded WinDivert driver
-                        # locked even after every zapret process is gone.
-                        # A locked winws.exe means something is still RUNNING,
-                        # and staging it for reboot would hide a real problem
-                        # behind a "success" message — report it as partial.
-                        if rel_norm.lower().endswith(".sys") and _schedule_replace_on_reboot(target, data):
-                            pending_reboot.append(rel_norm)
-                            extracted += 1
-                            if on_status:
-                                on_status("Файл занят, замена запланирована после перезагрузки: " + rel_path)
-                        else:
-                            raise
-                except OSError:
-                    _record_skip(rel_path)
-                    if on_status:
-                        on_status("Пропущен занятый файл: " + rel_path)
+                with zf.open(member) as src:
+                    data = src.read()
+                _install_bytes(rel_path, data)
     except zipfile.BadZipFile:
         _rollback()
         return "Скачанный архив повреждён, попробуйте ещё раз."
     except Exception as exc:  # noqa: BLE001
         _rollback()
         return "Ошибка распаковки: " + str(exc)
+
+    # Merge hidden service data from the tag source archive. The official
+    # release asset currently contains no .service directory at all.
+    if source_payload is not None:
+        try:
+            with zipfile.ZipFile(io.BytesIO(source_payload)) as source_zf:
+                infos = source_zf.infolist()
+                if len(infos) > MAX_ARCHIVE_ENTRIES:
+                    raise ValueError("слишком много файлов в исходном архиве")
+                total_size = sum(info.file_size for info in infos)
+                if total_size > MAX_UNCOMPRESSED_BYTES:
+                    raise ValueError(
+                        "исходный архив превышает безопасный размер"
+                    )
+                if any(info.file_size > MAX_MEMBER_BYTES for info in infos):
+                    raise ValueError(
+                        "файл в исходном архиве превышает безопасный размер"
+                    )
+                if any(info.flag_bits & 0x1 for info in infos):
+                    raise ValueError(
+                        "зашифрованный исходный архив не поддерживается"
+                    )
+                for info in infos:
+                    mode = (info.external_attr >> 16) & 0xFFFF
+                    if stat.S_ISLNK(mode):
+                        raise ValueError(
+                            "символическая ссылка в исходном архиве: "
+                            + info.filename
+                        )
+                source_root = _common_root(
+                    [info.filename for info in infos]
+                )
+                service_found: set[str] = set()
+                for info in infos:
+                    norm = info.filename.replace("\\", "/")
+                    rel_path = (
+                        norm[len(source_root):]
+                        if source_root and norm.startswith(source_root)
+                        else norm
+                    )
+                    if (
+                        not rel_path
+                        or info.is_dir()
+                        or not rel_path.startswith(".service/")
+                    ):
+                        continue
+                    if (
+                        Path(rel_path).is_absolute()
+                        or ".." in Path(rel_path).parts
+                    ):
+                        raise ValueError(
+                            "небезопасный путь в исходном архиве: "
+                            + rel_path
+                        )
+                    service_found.add(rel_path.casefold())
+                    if rel_path not in new_managed:
+                        _install_bytes(rel_path, source_zf.read(info))
+                required_service = {
+                    ".service/hosts",
+                    ".service/ipset-service.txt",
+                }
+                missing_service = sorted(
+                    required_service - service_found
+                )
+                if missing_service:
+                    raise ValueError(
+                        "не найдены служебные файлы: "
+                        + ", ".join(missing_service)
+                    )
+        except zipfile.BadZipFile:
+            _rollback()
+            return "Исходный архив zapret повреждён. Обновление отменено."
+        except Exception as exc:  # noqa: BLE001
+            _rollback()
+            return "Ошибка подготовки полного комплекта zapret: " + str(exc)
+
+    # Whether the tag source was the primary archive or a supplement, a modern
+    # release must actually install the two service inputs that were previously
+    # lost by the updater. Validate the final staged ownership set, not merely
+    # the archive listing.
+    if rel.source_zip_url:
+        installed_casefold = {name.casefold() for name in new_managed}
+        required_service = {
+            ".service/hosts",
+            ".service/ipset-service.txt",
+        }
+        missing_service = sorted(required_service - installed_casefold)
+        if missing_service:
+            _rollback()
+            return (
+                "Полный комплект zapret не установлен, отсутствуют: "
+                + ", ".join(missing_service)
+                + ". Обновление отменено."
+            )
+
+    # A complete bundle update is all-or-nothing. Silently accepting any failed
+    # helper/list write recreates the mixed-version installs this prevents.
+    if write_failures:
+        _rollback()
+        failed = ", ".join(dict.fromkeys(write_failures[:8]))
+        if len(write_failures) > 8:
+            failed += ", ..."
+        return (
+            "Обновление выполнено частично до " + rel.tag
+            + ": не удалось заменить файлы: " + failed
+            + ". Все уже записанные файлы возвращены к предыдущей версии. "
+            "Закройте zapret/службу или добавьте папку в исключения антивируса "
+            "и повторите обновление."
+        )
 
     if pending_reboot:
         try:
@@ -588,6 +833,27 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
             + ".\n\nПерезагрузите компьютер, затем запустите приложение снова."
         )
 
+    # Remove only files recorded in the previous upstream manifest. Unknown
+    # local files are never guessed/deleted during migration; from this update
+    # onward, files removed by Flowseal disappear cleanly on the next update.
+    for rel_path in sorted(old_managed - new_managed):
+        if _is_preserved_path(rel_path):
+            continue
+        target = zapret_dir / rel_path
+        try:
+            if target.exists() and target.is_file():
+                _remember_original(target)
+                target.unlink()
+                removed_stale += 1
+        except OSError as exc:
+            _rollback()
+            return (
+                "Не удалось удалить устаревший файл "
+                + rel_path
+                + ": "
+                + str(exc)
+            )
+
     # If core binaries were not replaced, do not rebuild/mark the release as
     # installed. Otherwise the UI would say "updated" while winws/driver are
     # still old or mixed-version.
@@ -603,12 +869,18 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
             "или добавьте папку zapret в исключения антивируса, затем повторите обновление."
         )
 
-    # Convert the freshly extracted Flowseal .bat recipes into our own catalog,
-    # then delete the .bat -- the app runs winws.exe straight from the catalog.
+    # Convert Flowseal's recipes into the app catalog while retaining every
+    # upstream BAT (especially service.bat) as part of the complete bundle.
     try:
         from . import strategy_catalog
         _remember_original(zapret_dir / strategy_catalog.CATALOG_FILENAME)
-        strategy_catalog.rebuild_from_bats(zapret_dir, delete_bats=True)
+        strategy_count = strategy_catalog.rebuild_from_bats(
+            zapret_dir, delete_bats=False
+        )
+        if strategy_count <= 0:
+            raise ValueError(
+                "в архиве не удалось распознать ни одной стратегии"
+            )
     except Exception as exc:
         # Never mark a release installed when its executable files changed but
         # the matching strategies could not be rebuilt. That mixed state must
@@ -621,12 +893,28 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
             + ". Обновление не отмечено завершённым; повторите попытку."
         )
 
+    # Record the exact upstream ownership set only after files and strategy
+    # catalog are coherent. This enables safe deletion of upstream-removed files
+    # on later updates without ever guessing which local files belong to users.
+    manifest_path = zapret_dir / MANIFEST_FILENAME
+    try:
+        _remember_original(manifest_path)
+        _save_managed_files(zapret_dir, rel.tag, new_managed)
+    except OSError as exc:
+        _rollback()
+        return (
+            "Не удалось записать манифест полного обновления zapret: "
+            + str(exc)
+        )
+
     # Record the version so the same update isn't offered again.
     save_local_version(zapret_dir, rel.tag)
     # Store the digest so a re-download of the SAME tag with DIFFERENT bytes
     # (MITM / partial download / corrupted cache) is caught next time.
     _save_installed_sha256(zapret_dir, actual_digest)
     msg = "Обновлено до " + rel.tag + ": распаковано " + str(extracted) + " файлов."
+    if removed_stale:
+        msg += " Удалено устаревших файлов: " + str(removed_stale) + "."
     if skipped:
         shown = ", ".join(skipped_paths[:6])
         if len(skipped_paths) > 6:

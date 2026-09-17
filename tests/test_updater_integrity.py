@@ -414,8 +414,8 @@ class UpdaterIntegrityTests(unittest.TestCase):
                 rel = updater.ReleaseInfo("v-txt", "v-txt", "http://x", "http://y")
                 msg = updater.download_and_apply(rel, root)
                 builtins.open = old_open
-            self.assertNotIn("частично", msg)
-            self.assertIn("Обновлено", msg)
+            self.assertIn("частично", msg)
+            self.assertNotIn("Обновлено до", msg)
         finally:
             builtins.open = old_open
             updater._release_windivert_locks = old_release

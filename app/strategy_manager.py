@@ -333,7 +333,7 @@ class StrategyManager:
         cpath = strategy_catalog.catalog_path(self.zapret_dir)
         try:
             if force_rebuild:
-                strategy_catalog.rebuild_from_bats(self.zapret_dir, delete_bats=True)
+                strategy_catalog.rebuild_from_bats(self.zapret_dir, delete_bats=False)
             strategy_catalog.ensure_catalog(self.zapret_dir)
         except Exception:
             pass

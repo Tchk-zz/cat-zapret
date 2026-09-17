@@ -181,8 +181,8 @@ def test_all_themes_apply_without_error(main_window):
         assert qss and qss.strip(), f"Theme {theme_id!r} produced empty QSS"
 
 
-def test_light_theme_action_cards_keep_readable_text(main_window):
-    """Custom child labels must not stay white on Light's white card fill."""
+def test_light_theme_action_cards_keep_readable_text_and_icons(main_window):
+    """Light cards keep readable labels and both functional action icons."""
     main_window._toggle_theme("light", checked=True)
     for attr in ("btn_auto", "btn_check"):
         title = getattr(main_window, attr + "_deco_title")
@@ -190,7 +190,9 @@ def test_light_theme_action_cards_keep_readable_text(main_window):
         icon = getattr(main_window, attr + "_deco_icon")
         assert "#1a1a1a" in title.styleSheet()
         assert "rgba(26, 26, 26" in subtitle.styleSheet()
-        assert icon.isHidden(), "neutral themes must hide decorative action icons"
+        assert not icon.isHidden(), "action icon disappeared in the Light theme"
+        pixmap = icon.pixmap()
+        assert pixmap is not None and not pixmap.isNull()
 
 
 def test_tab_switching_does_not_crash(main_window):

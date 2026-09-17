@@ -34,6 +34,7 @@ import logging
 import logging.handlers
 import os
 import shutil
+import stat
 import sys
 import tempfile
 import threading
@@ -67,6 +68,7 @@ LOG_FILENAME = "tg_proxy.log"
 _TG_UPDATE_MAX_DOWNLOAD = 50 * 1024 * 1024
 _TG_UPDATE_MAX_FILES = 256
 _TG_UPDATE_MAX_UNCOMPRESSED = 32 * 1024 * 1024
+_TG_UPDATE_MAX_MEMBER = 8 * 1024 * 1024
 _TG_REQUIRED_MODULES = {
     "_aes.py", "balancer.py", "bridge.py", "config.py", "fake_tls.py",
     "pool.py", "raw_websocket.py", "stats.py", "tg_ws_proxy.py", "utils.py",
@@ -542,13 +544,29 @@ def download_and_apply_update(
     if progress_cb:
         progress_cb("Загрузка tg-ws-proxy " + rel.tag + "...")
     try:
-        r = requests.get(rel.zip_url, timeout=timeout, headers={"User-Agent": "ZapretGUI-tg-proxy"})
+        r = requests.get(
+            rel.zip_url,
+            timeout=timeout,
+            headers={"User-Agent": "ZapretGUI-tg-proxy"},
+        )
         r.raise_for_status()
+        raw_length = getattr(r, "headers", {}).get("Content-Length", "0")
+        try:
+            content_length = int(raw_length or 0)
+        except (TypeError, ValueError):
+            content_length = 0
+        if content_length > _TG_UPDATE_MAX_DOWNLOAD:
+            raise ValueError("архив tg-ws-proxy слишком большой")
+        payload = r.content
+        if len(payload) > _TG_UPDATE_MAX_DOWNLOAD:
+            raise ValueError("архив tg-ws-proxy слишком большой")
     except Exception as exc:  # noqa: BLE001
-        return TGProxyUpdateResult(False, "error", "Ошибка загрузки tg-ws-proxy: " + str(exc), tag=rel.tag)
-
-    if len(r.content) > _TG_UPDATE_MAX_DOWNLOAD:
-        return TGProxyUpdateResult(False, "error", "Архив tg-ws-proxy слишком большой.", tag=rel.tag)
+        return TGProxyUpdateResult(
+            False,
+            "error",
+            "Ошибка загрузки tg-ws-proxy: " + str(exc),
+            tag=rel.tag,
+        )
 
     runtime_package = runtime_engine_dir(data_dir)
     runtime_parent = runtime_package.parent
@@ -573,15 +591,24 @@ def download_and_apply_update(
     skipped = 0
     was_loaded = _engine_modules_loaded()
     try:
-        with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
+        with zipfile.ZipFile(io.BytesIO(payload)) as zf:
             infos = zf.infolist()
             if len(infos) > _TG_UPDATE_MAX_FILES:
                 raise ValueError("слишком много файлов в архиве")
             if sum(info.file_size for info in infos) > _TG_UPDATE_MAX_UNCOMPRESSED:
                 raise ValueError("распакованный архив превышает безопасный размер")
+            if any(info.file_size > _TG_UPDATE_MAX_MEMBER for info in infos):
+                raise ValueError("файл в архиве превышает безопасный размер")
             if any(info.flag_bits & 0x1 for info in infos):
                 raise ValueError("зашифрованный архив не поддерживается")
+            for info in infos:
+                mode = (info.external_attr >> 16) & 0xFFFF
+                if stat.S_ISLNK(mode):
+                    raise ValueError(
+                        "символическая ссылка в архиве: " + info.filename
+                    )
             root = _common_root([info.filename for info in infos])
+            seen_module_names = set()
             for member in zf.namelist():
                 norm = member.replace("\\", "/")
                 rel_path = norm[len(root):] if root and norm.startswith(root) else norm
@@ -593,6 +620,12 @@ def download_and_apply_update(
                 if not name or "/" in name or name == "__init__.py":
                     skipped += 1
                     continue
+                name_key = name.casefold()
+                if name_key in seen_module_names:
+                    raise ValueError(
+                        "дублирующее имя модуля в архиве: " + name
+                    )
+                seen_module_names.add(name_key)
                 target = package_dir / name
                 tmp = target.with_suffix(target.suffix + ".tmp")
                 tmp.write_bytes(zf.read(member))
@@ -635,6 +668,22 @@ def download_and_apply_update(
         shutil.rmtree(package_dir, ignore_errors=True)
         detail = ", ".join(missing) if missing else "proxy/*.py"
         return TGProxyUpdateResult(False, "error", "Неполный архив tg-ws-proxy, отсутствуют: " + detail, tag=rel.tag)
+
+    # Stage the version marker with the package. It must become visible in the
+    # same atomic directory swap as the modules, never in a later best-effort
+    # write that could leave new code reporting an old version.
+    try:
+        (package_dir / "VERSION").write_text(
+            _norm(rel.tag), encoding="utf-8"
+        )
+    except OSError as exc:
+        shutil.rmtree(package_dir, ignore_errors=True)
+        return TGProxyUpdateResult(
+            False,
+            "error",
+            "Не удалось подготовить VERSION tg-ws-proxy: " + str(exc),
+            tag=rel.tag,
+        )
 
     # Compile every module before touching the active package. This catches a
     # truncated or incompatible source archive while rollback is still trivial.

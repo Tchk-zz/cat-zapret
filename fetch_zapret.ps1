@@ -1,6 +1,5 @@
-# Downloads the latest Flowseal zapret-discord-youtube bundle into vendor\zapret
-# so build.bat can embed it into the standalone exe. Runs once; if the bundle
-# is already present it does nothing.
+# Downloads and validates the latest Flowseal zapret-discord-youtube bundle
+# into vendor\zapret so build.bat can embed a complete offline baseline.
 $ErrorActionPreference = 'Stop'
 
 $repo = 'Flowseal/zapret-discord-youtube'
@@ -43,9 +42,9 @@ if ($asset) {
     # Verify SHA-256 against the digest advertised by GitHub. The API returns
     # it as "sha256:<hex>"; we strip the prefix and compare. A mismatch is a
     # hard error — better to abort the build than ship a corrupted winws.exe.
+    $actual = (Get-FileHash -Algorithm SHA256 -Path $zip).Hash.ToLower()
     if ($asset.digest) {
         $expected = $asset.digest -replace '^sha256:', ''
-        $actual = (Get-FileHash -Algorithm SHA256 -Path $zip).Hash.ToLower()
         if ($actual -ne $expected.ToLower()) {
             Write-Error "SHA-256 mismatch: expected $expected, got $actual"
             Write-Error 'The downloaded asset is corrupted or tampered with. Re-run build.bat.'
@@ -64,6 +63,22 @@ if ($asset) {
 
 $ext = Join-Path $tmp 'x'
 Expand-Archive -Path $zip -DestinationPath $ext -Force
+
+# Flowseal's release asset is produced on Windows and currently omits the
+# hidden .service directory. Fetch the immutable tag source zipball as a
+# supplement so HOSTS, ipset-service.txt and future service files are embedded.
+$sourceZip = Join-Path $tmp 'source.zip'
+$sourceExt = Join-Path $tmp 'source'
+Write-Host 'Downloading source supplement for .service HOSTS/IPSet files...'
+Invoke-WebRequest -Uri $rel.zipball_url -OutFile $sourceZip -Headers $headers
+Expand-Archive -Path $sourceZip -DestinationPath $sourceExt -Force
+$serviceDir = Get-ChildItem -Path $sourceExt -Directory -Force -Recurse |
+    Where-Object { $_.Name -eq '.service' } |
+    Select-Object -First 1
+if (-not $serviceDir) {
+    Write-Error '.service directory was not found in the tagged source archive.'
+    exit 1
+}
 
 # Locate the folder that actually contains bin\winws.exe (handles both the
 # flat release asset and the nested source zipball layouts).
@@ -85,15 +100,25 @@ if ($winws.Directory.FullName -eq $ext) {
 
 $staged = Join-Path $tmp 'validated'
 New-Item -ItemType Directory -Force -Path $staged | Out-Null
-Copy-Item -Path (Join-Path $srcRoot '*') -Destination $staged -Recurse -Force
+# Wildcard Copy-Item silently skipped dot-directories. Enumerating with -Force
+# keeps hidden upstream content when the primary archive contains any.
+Get-ChildItem -LiteralPath $srcRoot -Force |
+    Copy-Item -Destination $staged -Recurse -Force
+Copy-Item -LiteralPath $serviceDir.FullName -Destination $staged -Recurse -Force
 
 $required = @(
     'bin\winws.exe',
     'bin\WinDivert.dll',
-    'bin\WinDivert64.sys'
+    'bin\WinDivert64.sys',
+    '.service\hosts',
+    '.service\ipset-service.txt',
+    'lists\list-general.txt',
+    'lists\list-exclude.txt',
+    'lists\ipset-all.txt',
+    'service.bat'
 )
 $missing = @($required | Where-Object { -not (Test-Path (Join-Path $staged $_)) })
-$hasStrategy = @(Get-ChildItem -Path $staged -Filter '*.bat' -File -ErrorAction SilentlyContinue).Count -gt 0
+$hasStrategy = @(Get-ChildItem -Path $staged -Filter 'general*.bat' -File -ErrorAction SilentlyContinue).Count -gt 0
 if ($missing.Count -gt 0 -or -not $hasStrategy) {
     $details = if ($missing.Count -gt 0) { $missing -join ', ' } else { '*.bat strategies' }
     Write-Error "Downloaded archive is incomplete or unsupported. Missing: $details"
@@ -102,7 +127,10 @@ if ($missing.Count -gt 0 -or -not $hasStrategy) {
 
 # Record provenance inside the embedded bundle and replace it only after the
 # staged copy passed all checks. This prevents a stale mixed-version vendor.
-Set-Content -Path (Join-Path $staged '.zapret_gui_version') -Value $rel.tag_name -Encoding UTF8
+# Tags and digests are ASCII. Avoid Windows PowerShell 5.1's UTF-8 BOM,
+# which would otherwise become part of the version string read by Python.
+Set-Content -Path (Join-Path $staged '.zapret_gui_version') -Value $rel.tag_name -Encoding ASCII
+Set-Content -Path (Join-Path $staged '.zapret_gui_sha256') -Value $actual -Encoding ASCII
 if (Test-Path $dest) {
     Remove-Item -Path $dest -Recurse -Force
 }

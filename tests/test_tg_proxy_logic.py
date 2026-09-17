@@ -557,6 +557,10 @@ class TgProxyLogicTests(unittest.TestCase):
                         "_ssl_ctx.verify_mode = ssl.CERT_NONE\n"
                     )
                 zf.writestr("tg-ws-proxy-1.8.1/proxy/" + name, body)
+            zf.writestr(
+                "tg-ws-proxy-1.8.1/proxy/new_feature.py",
+                "NEW_UPSTREAM_MODULE = True\n",
+            )
             zf.writestr("tg-ws-proxy-1.8.1/proxy/__init__.py", "SHOULD_NOT_COPY = True\n")
             zf.writestr("tg-ws-proxy-1.8.1/LICENSE", "MIT\n")
             zf.writestr("tg-ws-proxy-1.8.1/../escape.py", "bad\n")
@@ -576,13 +580,19 @@ class TgProxyLogicTests(unittest.TestCase):
             tg_proxy.requests = _Requests()
             with tempfile.TemporaryDirectory() as td:
                 data_dir = Path(td)
+                runtime = tg_proxy.runtime_engine_dir(data_dir)
+                runtime.mkdir(parents=True)
+                (runtime / "stale_upstream_module.py").write_text(
+                    "STALE = True\n", encoding="utf-8"
+                )
                 rel = tg_proxy.TGProxyReleaseInfo(
                     tag="v1.8.1", name="v1.8.1", zip_url="http://x", html_url="http://y"
                 )
                 res = tg_proxy.download_and_apply_update(rel, data_dir)
                 self.assertTrue(res.ok, res.message)
-                runtime = tg_proxy.runtime_engine_dir(data_dir)
                 self.assertEqual((runtime / "VERSION").read_text(encoding="utf-8"), "1.8.1")
+                self.assertTrue((runtime / "new_feature.py").exists())
+                self.assertFalse((runtime / "stale_upstream_module.py").exists())
                 self.assertIn("VALUE = 181", (runtime / "tg_ws_proxy.py").read_text(encoding="utf-8"))
                 raw_ws = (runtime / "raw_websocket.py").read_text(encoding="utf-8")
                 self.assertIn("ssl.CERT_REQUIRED", raw_ws)

@@ -294,21 +294,28 @@ class ThemeApplyMixin:
                 pill_shadow.setOffset(0, 2)
                 pill_shadow.setColor(QColor(0, 0, 0, 95))
                 apply_effect(self.status_pill, pill_shadow)
-        # Neutral themes (dark/light) remove decorative cats and action icons.
-        # Image themes + purple keep them.
-        show_decor = not is_neutral
+        # Neutral themes keep the flat composition and may hide mascot art, but
+        # the two action icons are functional affordances rather than optional
+        # decoration. 1.9.5 accidentally tied them to the mascot switch, which
+        # made both icons disappear in the default Dark and Light presets.
+        show_mascot_decor = not is_neutral
         if hasattr(self, "settings_cat"):
-            self.settings_cat.setVisible(show_decor)
-        if hasattr(self, "btn_auto"):
-            self.btn_auto.setIcon(QIcon() if not show_decor else QIcon(asset_path("auto_select_icon_256.png")))
-            self.btn_auto.setIconSize(QSize(0, 0) if not show_decor else QSize(50, 50))
-        if hasattr(self, "btn_check"):
-            self.btn_check.setIcon(QIcon() if not show_decor else QIcon(asset_path("check_icon_256.png")))
-            self.btn_check.setIconSize(QSize(0, 0) if not show_decor else QSize(50, 50))
-        for attr in ("btn_auto", "btn_check"):
+            self.settings_cat.setVisible(show_mascot_decor)
+        action_deco_active = bool(getattr(self, "_action_deco_active", False))
+        for attr, icon_name in (
+            ("btn_auto", "auto_select_icon_256.png"),
+            ("btn_check", "check_icon_256.png"),
+        ):
+            btn = getattr(self, attr, None)
+            if btn is not None:
+                # The unified Home layout paints a larger QLabel icon inside
+                # the card. Keep QPushButton's own icon only for the compact
+                # fallback layout so the artwork is never duplicated.
+                btn.setIcon(QIcon() if action_deco_active else QIcon(asset_path(icon_name)))
+                btn.setIconSize(QSize(0, 0) if action_deco_active else QSize(50, 50))
             deco_icon = getattr(self, attr + "_deco_icon", None)
             if deco_icon is not None:
-                deco_icon.setVisible(show_decor)
+                deco_icon.setVisible(action_deco_active)
         # Update the theme-selector button label (in case it was created
         # before the theme was applied — e.g. on first launch).
         if hasattr(self, "btn_theme_select"):
