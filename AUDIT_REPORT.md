@@ -124,7 +124,7 @@
 
 **Проблема:** Inno Setup 6.7 предупреждал об устаревшем architecture id `x64` и об отсутствии `RunOnceId` у удаления задачи автозапуска.
 
-**Исправлено:** используется `x64compatible`, uninstall-команде назначен стабильный `RunOnceId`. PyInstaller clean-build с исправленным `cryptography` успешно создал `dist/ZapretGUI.exe` (54 778 402 bytes, SHA-256 `e70f99241f7893645f0032ca10fbee449990acc8b2f1ef32d987c99b76740c72`). Inno Setup 6.7.3 повторно собрал installer без предупреждений: `Output/ZapretGUI-Setup.exe` (56 264 327 bytes, SHA-256 `2bb6ab20c50eebf81b0edda0b15bfcda97c76c9ed9ce02cdf6bba2a16d7c5697`). PyInstaller отдельно предупреждает только о kernel dependencies WinDivert64.sys (`fwpkclnt.sys`, `WDFLDR.SYS`, `NDIS.SYS`), которые предоставляет Windows и не должны встраиваться в приложение.
+**Исправлено:** используется `x64compatible`, uninstall-команде назначен стабильный `RunOnceId`. Финальный PyInstaller clean-build версии 1.9.5 успешно создал `dist/ZapretGUI.exe` (54 789 314 bytes, SHA-256 `52ce218520f36ba2c0fd1c9362d1aa05801039e3760591860c1d55428fb9edea`). Inno Setup 6.7.3 собрал installer с явным `/DMyAppVersion=1.9.5` без предупреждений: `Output/ZapretGUI-Setup.exe` (56 273 697 bytes, SHA-256 `9b199630b4aff8d4e5d554dc2ae91f578a1e87d6e698d1bac906934ee35499e0`). PyInstaller отдельно предупреждает только о kernel dependencies WinDivert64.sys (`fwpkclnt.sys`, `WDFLDR.SYS`, `NDIS.SYS`), которые предоставляет Windows и не должны встраиваться в приложение.
 
 Полный запуск нового EXE не выполнялся: на ПК уже запущена установленная копия из `C:\\Program Files\\ZapretGUI`, и single-instance guard корректно завершает вторую копию. Останавливать рабочее приложение без явного разрешения нельзя.
 
