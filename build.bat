@@ -48,32 +48,22 @@ echo Using Python: %PY%
 %PY% --version
 echo.
 
-REM --- 2. Install dependencies ---
-echo Installing dependencies...
-%PY% -m pip install --upgrade pip
+REM --- 2. Install pinned release-build dependencies ---
+echo Installing pinned build dependencies...
+%PY% -m pip install -r requirements-build.txt
 if errorlevel 1 (
-    echo [WARN] pip upgrade failed, continuing with the existing version...
-)
-%PY% -m pip install -r requirements.txt
-if errorlevel 1 (
-    echo [ERROR] Failed to install dependencies from requirements.txt
-    call :smart_pause
-    exit /b 1
-)
-%PY% -m pip install "pyinstaller>=6.0"
-if errorlevel 1 (
-    echo [ERROR] Failed to install PyInstaller.
+    echo [ERROR] Failed to install dependencies from requirements-build.txt
     call :smart_pause
     exit /b 1
 )
 echo.
 
 REM --- 2b. Download the full zapret bundle to embed into the exe ---
-echo Preparing embedded zapret bundle (downloads once)...
+echo Preparing the latest verified zapret bundle...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0fetch_zapret.ps1"
 if errorlevel 1 (
     echo [ERROR] Could not download the zapret bundle to embed.
-    echo The first build needs internet access. Check your connection and retry.
+    echo Release builds need internet access. Check your connection and retry.
     call :smart_pause
     exit /b 1
 )

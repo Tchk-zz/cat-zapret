@@ -6,11 +6,8 @@ $ErrorActionPreference = 'Stop'
 $repo = 'Flowseal/zapret-discord-youtube'
 $dest = Join-Path $PSScriptRoot 'vendor\zapret'
 
-if (Test-Path (Join-Path $dest 'bin\winws.exe')) {
-    Write-Host 'zapret bundle already present in vendor\zapret - skipping download.'
-    exit 0
-}
-
+# Always resolve and stage the current release. Checking only for winws.exe
+# previously let an old or half-populated vendor bundle survive forever.
 # Enable TLS 1.2 AND TLS 1.3 (if available) so GitHub API + release downloads
 # work on modern Windows. Windows PowerShell 5.1 only knows about TLS 1.2 by
 # default; PowerShell 7+ adds 1.3 automatically. We OR the flags together so
@@ -86,15 +83,31 @@ if ($winws.Directory.FullName -eq $ext) {
     $srcRoot = $winws.Directory.Parent.FullName
 }
 
-New-Item -ItemType Directory -Force -Path $dest | Out-Null
-Copy-Item -Path (Join-Path $srcRoot '*') -Destination $dest -Recurse -Force
+$staged = Join-Path $tmp 'validated'
+New-Item -ItemType Directory -Force -Path $staged | Out-Null
+Copy-Item -Path (Join-Path $srcRoot '*') -Destination $staged -Recurse -Force
 
-if (-not (Test-Path (Join-Path $dest 'bin\winws.exe'))) {
-    Write-Error 'Downloaded archive was copied, but vendor\zapret\bin\winws.exe is still missing.'
-    Write-Error 'The release archive layout is not supported by this build script.'
+$required = @(
+    'bin\winws.exe',
+    'bin\WinDivert.dll',
+    'bin\WinDivert64.sys'
+)
+$missing = @($required | Where-Object { -not (Test-Path (Join-Path $staged $_)) })
+$hasStrategy = @(Get-ChildItem -Path $staged -Filter '*.bat' -File -ErrorAction SilentlyContinue).Count -gt 0
+if ($missing.Count -gt 0 -or -not $hasStrategy) {
+    $details = if ($missing.Count -gt 0) { $missing -join ', ' } else { '*.bat strategies' }
+    Write-Error "Downloaded archive is incomplete or unsupported. Missing: $details"
     exit 1
 }
 
+# Record provenance inside the embedded bundle and replace it only after the
+# staged copy passed all checks. This prevents a stale mixed-version vendor.
+Set-Content -Path (Join-Path $staged '.zapret_gui_version') -Value $rel.tag_name -Encoding UTF8
+if (Test-Path $dest) {
+    Remove-Item -Path $dest -Recurse -Force
+}
+Move-Item -Path $staged -Destination $dest
+
 try { Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue } catch {}
-Write-Host ("zapret " + $rel.tag_name + " bundle ready at " + $dest)
+Write-Host ("zapret " + $rel.tag_name + " complete bundle ready at " + $dest)
 exit 0

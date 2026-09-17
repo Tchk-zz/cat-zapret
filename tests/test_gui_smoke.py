@@ -181,6 +181,18 @@ def test_all_themes_apply_without_error(main_window):
         assert qss and qss.strip(), f"Theme {theme_id!r} produced empty QSS"
 
 
+def test_light_theme_action_cards_keep_readable_text(main_window):
+    """Custom child labels must not stay white on Light's white card fill."""
+    main_window._toggle_theme("light", checked=True)
+    for attr in ("btn_auto", "btn_check"):
+        title = getattr(main_window, attr + "_deco_title")
+        subtitle = getattr(main_window, attr + "_deco_sub")
+        icon = getattr(main_window, attr + "_deco_icon")
+        assert "#1a1a1a" in title.styleSheet()
+        assert "rgba(26, 26, 26" in subtitle.styleSheet()
+        assert icon.isHidden(), "neutral themes must hide decorative action icons"
+
+
 def test_tab_switching_does_not_crash(main_window):
     """Switching to every tab index must not raise. Catches regressions
     in _fade_current_tab (QGraphicsOpacityEffect) and _update_bg_mode."""

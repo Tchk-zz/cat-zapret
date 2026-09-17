@@ -57,7 +57,8 @@ SetupIconFile=ui\assets\app.ico
 ; missing icon in Add/Remove Programs.
 UninstallDisplayIcon={app}\{#MyAppExeName}
 PrivilegesRequired=admin
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 ; We close the running GUI ourselves in [Code]. Inno's Restart Manager prompt
 ; could not reliably close the tray/elevated process and allowed users to
 ; continue with the old ZapretGUI.exe still locked, leaving an old version installed.
@@ -218,7 +219,7 @@ end;
 
 [UninstallRun]
 ; Remove the scheduled task on uninstall.
-Filename: "schtasks.exe"; Parameters: "/Delete /TN ZapretGUI_Autostart /F"; Flags: runhidden
+Filename: "schtasks.exe"; Parameters: "/Delete /TN ZapretGUI_Autostart /F"; Flags: runhidden; RunOnceId: "DeleteZapretGUIAutostart"
 
 ; Per-user data (config.json, tg-ws-proxy engine state) lives in
 ; %LOCALAPPDATA%\ZapretGUI -- see app/config.py default_data_dir(), which uses

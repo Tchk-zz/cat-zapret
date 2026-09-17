@@ -544,8 +544,19 @@ class TgProxyLogicTests(unittest.TestCase):
         from app import tg_proxy
         payload = io.BytesIO()
         with zipfile.ZipFile(payload, "w") as zf:
-            zf.writestr("tg-ws-proxy-1.8.1/proxy/tg_ws_proxy.py", "VALUE = 181\n")
-            zf.writestr("tg-ws-proxy-1.8.1/proxy/config.py", "proxy_config = object()\ndef parse_dc_ip_list(x): return {}\n")
+            for name in tg_proxy._TG_REQUIRED_MODULES:
+                body = "VALUE = 1\n"
+                if name == "tg_ws_proxy.py":
+                    body = "VALUE = 181\n"
+                elif name == "config.py":
+                    body = "proxy_config = object()\ndef parse_dc_ip_list(x): return {}\n"
+                elif name == "raw_websocket.py":
+                    body = (
+                        "import ssl\n_ssl_ctx = ssl.create_default_context()\n"
+                        "_ssl_ctx.check_hostname = False\n"
+                        "_ssl_ctx.verify_mode = ssl.CERT_NONE\n"
+                    )
+                zf.writestr("tg-ws-proxy-1.8.1/proxy/" + name, body)
             zf.writestr("tg-ws-proxy-1.8.1/proxy/__init__.py", "SHOULD_NOT_COPY = True\n")
             zf.writestr("tg-ws-proxy-1.8.1/LICENSE", "MIT\n")
             zf.writestr("tg-ws-proxy-1.8.1/../escape.py", "bad\n")
@@ -573,7 +584,11 @@ class TgProxyLogicTests(unittest.TestCase):
                 runtime = tg_proxy.runtime_engine_dir(data_dir)
                 self.assertEqual((runtime / "VERSION").read_text(encoding="utf-8"), "1.8.1")
                 self.assertIn("VALUE = 181", (runtime / "tg_ws_proxy.py").read_text(encoding="utf-8"))
+                raw_ws = (runtime / "raw_websocket.py").read_text(encoding="utf-8")
+                self.assertIn("ssl.CERT_REQUIRED", raw_ws)
+                self.assertNotIn("ssl.CERT_NONE", raw_ws)
                 self.assertNotIn("SHOULD_NOT_COPY", (runtime / "__init__.py").read_text(encoding="utf-8"))
+                self.assertFalse(runtime.with_name(runtime.name + ".backup").exists())
                 self.assertFalse((Path(td) / "escape.py").exists())
                 self.assertEqual(tg_proxy.local_version(data_dir), "1.8.1")
                 self.assertEqual(tg_proxy._engine_package_name(data_dir), "tg_proxy_engine_runtime")

@@ -19,19 +19,20 @@ jobs:
   tests:
     runs-on: windows-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.14"]
 
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
 
-      # Must match the Python used for local development (currently 3.14).
-      # With 3.13 here the suite ran on a different interpreter than the one
-      # the release exe is built with, so a break could show up in only one
-      # of the two places.
-      - name: Set up Python
+      # Test both the documented minimum and the release-build interpreter.
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Install dependencies
@@ -45,6 +46,9 @@ jobs:
       # directly would keep CI permanently red because of the vendored code.
       - name: Static analysis (pyflakes)
         run: python tools/check_lint.py
+
+      - name: Dependency vulnerability scan (OSV)
+        run: python tools/check_vulnerabilities.py
 
       - name: Run tests
         env:

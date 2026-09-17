@@ -36,6 +36,9 @@ INSTALLER_ASSET = "ZapretGUI-Setup.exe"
 # Prefix for the downloaded installer in %TEMP%. Kept in a constant because
 # _purge_stale_installers() uses it to find leftovers from previous runs.
 _TMP_PREFIX = "ZapretGUI-Setup-"
+# The installer is currently far below this. A hard cap prevents a corrupt or
+# malicious CDN response from filling the user's system drive before hashing.
+_MAX_INSTALLER_BYTES = 512 * 1024 * 1024
 
 # Versions are compared as fixed-width tuples so that "1.8" and "1.8.0" are
 # treated as the same version (see _norm).
@@ -389,12 +392,16 @@ def download_and_launch(
         total = 0
     if total <= 0:
         total = release.size or 0
+    if total > _MAX_INSTALLER_BYTES or release.size > _MAX_INSTALLER_BYTES:
+        resp.close()
+        return "Ошибка: установщик превышает безопасный лимит размера."
 
     tmp_path = ""
     digest = hashlib.sha256()
     downloaded = 0
     last_pct = -1
     cancelled = False
+    too_large = False
     try:
         tmp = tempfile.NamedTemporaryFile(
             delete=False,
@@ -417,6 +424,9 @@ def download_and_launch(
                 tmp.write(chunk)
                 digest.update(chunk)
                 downloaded += len(chunk)
+                if downloaded > _MAX_INSTALLER_BYTES:
+                    too_large = True
+                    break
                 if total > 0:
                     pct = min(100, downloaded * 100 // total)
                     if pct != last_pct:
@@ -434,6 +444,15 @@ def download_and_launch(
         _discard(tmp_path)
         _report("Загрузка обновления отменена.")
         return "cancelled"
+    if too_large:
+        _discard(tmp_path)
+        return "Ошибка: загрузка превысила безопасный лимит размера."
+    if release.size and downloaded != release.size:
+        _discard(tmp_path)
+        return (
+            "Ошибка: размер установщика не совпал с данными релиза "
+            f"(ожидалось {release.size}, загружено {downloaded})."
+        )
 
     # Verify the download before executing it. The installer runs elevated, so
     # a truncated download or a tampered mirror would be executed with admin

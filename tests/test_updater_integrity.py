@@ -114,6 +114,8 @@ class UpdaterIntegrityTests(unittest.TestCase):
         with zipfile.ZipFile(payload, "w") as zf:
             zf.writestr("../escape.txt", "bad")
             zf.writestr("bin/winws.exe", "ok")
+            zf.writestr("bin/WinDivert.dll", "dll")
+            zf.writestr("bin/WinDivert64.sys", "sys")
             zf.writestr("general.bat", "echo winws.exe --wf-tcp=443 --dpi-desync=fake")
 
         fake_requests = _FakeRequests(payload.getvalue())
@@ -144,6 +146,9 @@ class UpdaterIntegrityTests(unittest.TestCase):
         payload = io.BytesIO()
         with zipfile.ZipFile(payload, "w") as zf:
             zf.writestr("bundle/bin/winws.exe", b"new-winws")
+            zf.writestr("bundle/bin/WinDivert.dll", b"dll")
+            zf.writestr("bundle/bin/WinDivert64.sys", b"sys")
+            zf.writestr("bundle/general.bat", "echo winws.exe --wf-tcp=443 --dpi-desync=fake")
             zf.writestr("bundle/lists/list-general.txt", "example.com\n")
 
         fake_requests = _FakeRequests(payload.getvalue())
@@ -155,7 +160,9 @@ class UpdaterIntegrityTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td)
                 (root / "bin").mkdir()
+                (root / "lists").mkdir()
                 (root / "bin" / "winws.exe").write_bytes(b"old-winws")
+                (root / "lists" / "list-general.txt").write_text("old.example\n", encoding="utf-8")
 
                 def guarded_open(file, mode="r", *args, **kwargs):
                     if str(file).replace("\\", "/").endswith("bin/winws.exe") and "w" in mode:
@@ -168,6 +175,11 @@ class UpdaterIntegrityTests(unittest.TestCase):
                 self.assertIn("Обновление выполнено частично", msg)
                 self.assertIn("bin/winws.exe", msg)
                 self.assertEqual((root / "bin" / "winws.exe").read_bytes(), b"old-winws")
+                self.assertEqual(
+                    (root / "lists" / "list-general.txt").read_text(encoding="utf-8"),
+                    "old.example\n",
+                )
+                self.assertFalse((root / "bin" / "WinDivert.dll").exists())
                 self.assertFalse((root / updater.INSTALLED_MARKER).exists())
         finally:
             builtins.open = old_open
@@ -184,7 +196,10 @@ class UpdaterIntegrityTests(unittest.TestCase):
 
         payload = io.BytesIO()
         with zipfile.ZipFile(payload, "w") as zf:
+            zf.writestr("bundle/bin/winws.exe", b"winws")
+            zf.writestr("bundle/bin/WinDivert.dll", b"dll")
             zf.writestr("bundle/bin/WinDivert64.sys", b"new-driver")
+            zf.writestr("bundle/general.bat", "echo winws.exe --wf-tcp=443 --dpi-desync=fake")
             zf.writestr("bundle/lists/list-general.txt", "example.com\n")
 
         fake_requests = _FakeRequests(payload.getvalue())
@@ -461,6 +476,48 @@ class UpdaterIntegrityTests(unittest.TestCase):
                 self.assertFalse((Path(td) / updater.INSTALLED_MARKER).exists())
         finally:
             updater.latest_release = old_latest
+
+
+    def test_zapret_update_rejects_zip_bomb_member_before_writing(self):
+        import io
+        import zipfile
+        from app import updater
+
+        payload = io.BytesIO()
+        with zipfile.ZipFile(payload, "w") as zf:
+            info = zipfile.ZipInfo("bin/winws.exe")
+            info.file_size = updater.MAX_MEMBER_BYTES + 1
+            # ZipFile rewrites file_size for normal writes, so patch the parsed
+            # metadata to model a malicious central-directory declaration.
+            zf.writestr(info, b"x")
+            zf.writestr("bin/WinDivert.dll", b"dll")
+            zf.writestr("bin/WinDivert64.sys", b"sys")
+            zf.writestr("general.bat", b"echo winws.exe --wf-tcp=443 --dpi-desync=fake")
+
+        class _Resp:
+            content = payload.getvalue()
+            def raise_for_status(self):
+                return None
+
+        class _Requests:
+            @staticmethod
+            def get(*_args, **_kwargs):
+                return _Resp()
+
+        old_requests = updater.requests
+        old_limit = updater.MAX_MEMBER_BYTES
+        try:
+            updater.requests = _Requests()
+            updater.MAX_MEMBER_BYTES = 0
+            with tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                rel = updater.ReleaseInfo("v-test", "v-test", "http://x", "http://y")
+                msg = updater.download_and_apply(rel, root)
+                self.assertIn("превышает безопасный размер", msg)
+                self.assertFalse((root / "bin" / "winws.exe").exists())
+        finally:
+            updater.MAX_MEMBER_BYTES = old_limit
+            updater.requests = old_requests
 
 
 if __name__ == '__main__':

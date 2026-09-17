@@ -228,22 +228,30 @@ class DownloadAndLaunchTests(unittest.TestCase):
     def _real_digest(self):
         return hashlib.sha256(b"".join(self.CHUNKS)).hexdigest()
 
-    def _run(self, sha256, should_cancel=None, popen_error=None, download_error=None):
+    def _run(
+        self,
+        sha256,
+        should_cancel=None,
+        popen_error=None,
+        download_error=None,
+        reported_size=None,
+    ):
         """Run download_and_launch against a fake CDN inside a temp folder.
 
         Returns (result, leftover file count, Popen call count, statuses).
         """
         total = sum(len(c) for c in self.CHUNKS)
+        advertised = total if reported_size is None else reported_size
         rel = su.AppRelease(
             tag="v9.9.9",
             version="9.9.9",
             download_url="https://example.invalid/" + su.INSTALLER_ASSET,
-            size=total,
+            size=advertised,
             sha256=sha256,
         )
         response = _FakeResponse(
             chunks=self.CHUNKS,
-            headers={"Content-Length": str(total)},
+            headers={"Content-Length": str(advertised)},
         )
         stub = _FakeRequests(response, error=download_error)
         statuses = []
@@ -280,6 +288,24 @@ class DownloadAndLaunchTests(unittest.TestCase):
     def test_checksum_mismatch_refuses_and_deletes(self):
         result, leftovers, launches, _ = self._run("00" * 32)
         self.assertTrue(result.startswith("Ошибка"))
+        self.assertEqual(launches, 0)
+        self.assertEqual(leftovers, 0)
+
+    def test_oversized_installer_is_rejected_before_download(self):
+        with mock.patch.object(su, "_MAX_INSTALLER_BYTES", 1):
+            result, leftovers, launches, _ = self._run(self._real_digest())
+        self.assertTrue(result.startswith("Ошибка"))
+        self.assertIn("лимит размера", result)
+        self.assertEqual(launches, 0)
+        self.assertEqual(leftovers, 0)
+
+    def test_truncated_installer_is_rejected_before_checksum(self):
+        actual = sum(len(c) for c in self.CHUNKS)
+        result, leftovers, launches, _ = self._run(
+            self._real_digest(), reported_size=actual + 1
+        )
+        self.assertTrue(result.startswith("Ошибка"))
+        self.assertIn("размер", result)
         self.assertEqual(launches, 0)
         self.assertEqual(leftovers, 0)
 

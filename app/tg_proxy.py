@@ -33,7 +33,9 @@ import importlib
 import logging
 import logging.handlers
 import os
+import shutil
 import sys
+import tempfile
 import threading
 import time
 import re
@@ -61,6 +63,14 @@ DEFAULT_PORT = 1443
 # ourselves so the link stays stable across restarts.
 CONFIG_FILENAME = "tg_proxy_config.json"
 LOG_FILENAME = "tg_proxy.log"
+
+_TG_UPDATE_MAX_DOWNLOAD = 50 * 1024 * 1024
+_TG_UPDATE_MAX_FILES = 256
+_TG_UPDATE_MAX_UNCOMPRESSED = 32 * 1024 * 1024
+_TG_REQUIRED_MODULES = {
+    "_aes.py", "balancer.py", "bridge.py", "config.py", "fake_tls.py",
+    "pool.py", "raw_websocket.py", "stats.py", "tg_ws_proxy.py", "utils.py",
+}
 
 # User-facing log anti-spam. When Cloudflare returns HTTP 429 or times out,
 # tg-ws-proxy can emit the same fallback failure for every Telegram connection.
@@ -537,8 +547,15 @@ def download_and_apply_update(
     except Exception as exc:  # noqa: BLE001
         return TGProxyUpdateResult(False, "error", "Ошибка загрузки tg-ws-proxy: " + str(exc), tag=rel.tag)
 
-    package_dir = runtime_engine_dir(data_dir)
-    package_dir.mkdir(parents=True, exist_ok=True)
+    if len(r.content) > _TG_UPDATE_MAX_DOWNLOAD:
+        return TGProxyUpdateResult(False, "error", "Архив tg-ws-proxy слишком большой.", tag=rel.tag)
+
+    runtime_package = runtime_engine_dir(data_dir)
+    runtime_parent = runtime_package.parent
+    runtime_parent.mkdir(parents=True, exist_ok=True)
+    # Build a complete package away from the live one. Only after validation do
+    # we swap directories, so a crash cannot leave a half-old/half-new engine.
+    package_dir = Path(tempfile.mkdtemp(prefix=".tg-engine-update-", dir=runtime_parent))
     # The runtime package needs an __init__.py for relative imports inside the
     # upstream proxy modules. Keep it tiny and version-file based.
     init_py = package_dir / "__init__.py"
@@ -552,11 +569,19 @@ def download_and_apply_update(
             encoding="utf-8",
         )
     copied = 0
+    copied_names = set()
     skipped = 0
     was_loaded = _engine_modules_loaded()
     try:
         with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
-            root = _common_root(zf.namelist())
+            infos = zf.infolist()
+            if len(infos) > _TG_UPDATE_MAX_FILES:
+                raise ValueError("слишком много файлов в архиве")
+            if sum(info.file_size for info in infos) > _TG_UPDATE_MAX_UNCOMPRESSED:
+                raise ValueError("распакованный архив превышает безопасный размер")
+            if any(info.flag_bits & 0x1 for info in infos):
+                raise ValueError("зашифрованный архив не поддерживается")
+            root = _common_root([info.filename for info in infos])
             for member in zf.namelist():
                 norm = member.replace("\\", "/")
                 rel_path = norm[len(root):] if root and norm.startswith(root) else norm
@@ -573,6 +598,7 @@ def download_and_apply_update(
                 tmp.write_bytes(zf.read(member))
                 os.replace(tmp, target)
                 copied += 1
+                copied_names.add(name)
                 if progress_cb:
                     progress_cb("Обновлён TG module: " + name)
             # Keep upstream license close to the embedded engine.
@@ -583,12 +609,55 @@ def download_and_apply_update(
                     (package_dir / "LICENSE").write_bytes(zf.read(member))
                     break
     except zipfile.BadZipFile:
+        shutil.rmtree(package_dir, ignore_errors=True)
         return TGProxyUpdateResult(False, "error", "Скачанный архив tg-ws-proxy повреждён.", tag=rel.tag)
     except Exception as exc:  # noqa: BLE001
+        shutil.rmtree(package_dir, ignore_errors=True)
         return TGProxyUpdateResult(False, "error", "Ошибка распаковки tg-ws-proxy: " + str(exc), tag=rel.tag)
 
-    if copied <= 0:
-        return TGProxyUpdateResult(False, "error", "В архиве tg-ws-proxy не найдены proxy/*.py файлы.", tag=rel.tag)
+    # Upstream currently disables TLS certificate verification to support
+    # fronting. That is not acceptable for an auto-downloaded in-process
+    # component: keep SNI support but require a valid certificate for that SNI.
+    raw_ws = package_dir / "raw_websocket.py"
+    try:
+        raw_text = raw_ws.read_text(encoding="utf-8")
+        raw_text = raw_text.replace("_ssl_ctx.check_hostname = False", "_ssl_ctx.check_hostname = True")
+        raw_text = raw_text.replace("_ssl_ctx.verify_mode = ssl.CERT_NONE", "_ssl_ctx.verify_mode = ssl.CERT_REQUIRED")
+        if "ssl.CERT_NONE" in raw_text:
+            raise ValueError("upstream пытается отключить проверку TLS")
+        raw_ws.write_text(raw_text, encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        shutil.rmtree(package_dir, ignore_errors=True)
+        return TGProxyUpdateResult(False, "error", "Безопасная настройка TLS tg-ws-proxy не применена: " + str(exc), tag=rel.tag)
+
+    missing = sorted(_TG_REQUIRED_MODULES - copied_names)
+    if copied <= 0 or missing:
+        shutil.rmtree(package_dir, ignore_errors=True)
+        detail = ", ".join(missing) if missing else "proxy/*.py"
+        return TGProxyUpdateResult(False, "error", "Неполный архив tg-ws-proxy, отсутствуют: " + detail, tag=rel.tag)
+
+    # Compile every module before touching the active package. This catches a
+    # truncated or incompatible source archive while rollback is still trivial.
+    try:
+        for module_path in package_dir.glob("*.py"):
+            compile(module_path.read_text(encoding="utf-8"), str(module_path), "exec")
+    except Exception as exc:  # noqa: BLE001
+        shutil.rmtree(package_dir, ignore_errors=True)
+        return TGProxyUpdateResult(False, "error", "Проверка модулей tg-ws-proxy не пройдена: " + str(exc), tag=rel.tag)
+
+    backup = runtime_package.with_name(runtime_package.name + ".backup")
+    try:
+        shutil.rmtree(backup, ignore_errors=True)
+        if runtime_package.exists():
+            os.replace(runtime_package, backup)
+        os.replace(package_dir, runtime_package)
+    except Exception as exc:  # noqa: BLE001
+        if backup.exists() and not runtime_package.exists():
+            os.replace(backup, runtime_package)
+        shutil.rmtree(package_dir, ignore_errors=True)
+        return TGProxyUpdateResult(False, "error", "Не удалось атомарно установить tg-ws-proxy: " + str(exc), tag=rel.tag)
+    shutil.rmtree(backup, ignore_errors=True)
+
     save_local_version(data_dir, rel.tag)
     msg = f"tg-ws-proxy обновлён до {_norm(rel.tag)}: {copied} модулей."
     if skipped:

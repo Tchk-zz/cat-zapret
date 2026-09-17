@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
+import stat
 import subprocess
 import sys
 import time
@@ -51,6 +53,14 @@ REPO_VERSION_FILES = ("version.txt", ".version", "version")
 
 
 REBOOT_PENDING_MARKER = ".zapret_gui_reboot_required"
+
+# Defensive archive limits. The official bundle is only a few MiB; these
+# generous caps reject zip bombs/corrupt releases before any file is replaced.
+MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024
+MAX_ARCHIVE_ENTRIES = 4096
+MAX_UNCOMPRESSED_BYTES = 256 * 1024 * 1024
+MAX_MEMBER_BYTES = 64 * 1024 * 1024
+
 IS_WINDOWS = sys.platform.startswith("win")
 _NO_WINDOW = 0x08000000 if IS_WINDOWS else 0
 
@@ -358,6 +368,13 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
     except Exception as exc:  # noqa: BLE001
         return "\u041e\u0448\u0438\u0431\u043a\u0430 \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0438: " + str(exc)
 
+    if len(payload) > MAX_DOWNLOAD_BYTES:
+        return (
+            "Архив zapret слишком большой (лимит "
+            + str(MAX_DOWNLOAD_BYTES // (1024 * 1024))
+            + " МБ). Обновление отменено."
+        )
+
     # --- SHA-256 integrity check ---
     actual_digest = _sha256_hex(payload)
     if rel.digest_verified and rel.digest:
@@ -405,6 +422,25 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
     }
     critical_skipped = []
     pending_reboot = []
+    # Original bytes for every touched path. This lets us restore the previous
+    # coherent bundle if any critical replacement or catalog rebuild fails.
+    backups = {}
+
+    def _remember_original(target: Path) -> None:
+        if target in backups:
+            return
+        backups[target] = target.read_bytes() if target.exists() else None
+
+    def _rollback() -> None:
+        for target, original in reversed(list(backups.items())):
+            try:
+                if original is None:
+                    target.unlink(missing_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(original)
+            except OSError:
+                _log.error("rollback failed for %s", target, exc_info=True)
 
     # Критичны только исполняемые файлы движка в bin/. Раньше любой пропущенный
     # файл из bin/ (readme, конфиг, случайный .txt) превращал удачное
@@ -425,9 +461,36 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
 
     try:
         with zipfile.ZipFile(io.BytesIO(payload)) as zf:
-            names = zf.namelist()
+            infos = zf.infolist()
+            if len(infos) > MAX_ARCHIVE_ENTRIES:
+                return "В архиве zapret слишком много файлов. Обновление отменено."
+            total_size = 0
+            for info in infos:
+                total_size += info.file_size
+                if info.file_size > MAX_MEMBER_BYTES:
+                    return "Файл в архиве zapret превышает безопасный размер: " + info.filename
+                if total_size > MAX_UNCOMPRESSED_BYTES:
+                    return "Распакованный архив zapret превышает безопасный размер."
+                if info.flag_bits & 0x1:
+                    return "Зашифрованные файлы в архиве zapret не поддерживаются."
+                mode = (info.external_attr >> 16) & 0xFFFF
+                if stat.S_ISLNK(mode):
+                    return "Символические ссылки в архиве zapret запрещены: " + info.filename
+            names = [info.filename for info in infos]
             # GitHub zipball nests everything under a top folder — strip it.
             root = _common_root(names)
+            rel_names = {
+                (name.replace("\\", "/")[len(root):]
+                 if root and name.replace("\\", "/").startswith(root)
+                 else name.replace("\\", "/"))
+                for name in names
+            }
+            required = {"bin/winws.exe", "bin/WinDivert.dll", "bin/WinDivert64.sys"}
+            missing = sorted(required - rel_names)
+            if missing or not any(name.lower().endswith(".bat") for name in rel_names):
+                detail = ", ".join(missing) if missing else "стратегии *.bat"
+                return "Архив zapret неполный, отсутствуют: " + detail + "."
+            root_resolved = zapret_dir.resolve()
             for member in names:
                 norm = member.replace("\\", "/")
                 rel_path = norm[len(root):] if root and norm.startswith(root) else norm
@@ -445,11 +508,22 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
                         on_status("Пропущен небезопасный путь в архиве: " + rel_path)
                     continue
                 target = zapret_dir / rel_path
+                # Defend against a pre-existing symlink/junction inside the
+                # install tree redirecting a safe-looking archive path outside.
+                try:
+                    target_resolved = target.resolve(strict=False)
+                    if os.path.commonpath([str(root_resolved), str(target_resolved)]) != str(root_resolved):
+                        _record_skip(rel_path)
+                        continue
+                except (OSError, ValueError):
+                    _record_skip(rel_path)
+                    continue
                 # A locked/in-use file (e.g. winws.exe/service/AV holding it)
                 # must NOT crash the updater. But if a critical bin/* file is
                 # skipped, report a partial update instead of a success.
                 try:
                     target.parent.mkdir(parents=True, exist_ok=True)
+                    _remember_original(target)
                     with zf.open(member) as src:
                         data = src.read()
                     try:
@@ -489,8 +563,10 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
                     if on_status:
                         on_status("Пропущен занятый файл: " + rel_path)
     except zipfile.BadZipFile:
+        _rollback()
         return "Скачанный архив повреждён, попробуйте ещё раз."
     except Exception as exc:  # noqa: BLE001
+        _rollback()
         return "Ошибка распаковки: " + str(exc)
 
     if pending_reboot:
@@ -516,6 +592,7 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
     # installed. Otherwise the UI would say "updated" while winws/driver are
     # still old or mixed-version.
     if critical_skipped:
+        _rollback()
         crit = ", ".join(critical_skipped[:6])
         if len(critical_skipped) > 6:
             crit += ", ..."
@@ -530,11 +607,19 @@ def download_and_apply(rel: ReleaseInfo, zapret_dir: Path, timeout: float = 60.0
     # then delete the .bat -- the app runs winws.exe straight from the catalog.
     try:
         from . import strategy_catalog
+        _remember_original(zapret_dir / strategy_catalog.CATALOG_FILENAME)
         strategy_catalog.rebuild_from_bats(zapret_dir, delete_bats=True)
-    except Exception:
-        # The files are updated but the strategy list may look unchanged --
-        # exactly the kind of failure users report as "nothing happened".
+    except Exception as exc:
+        # Never mark a release installed when its executable files changed but
+        # the matching strategies could not be rebuilt. That mixed state must
+        # remain visible and retryable instead of being reported as success.
         _log.error("could not rebuild the strategy catalog after the update", exc_info=True)
+        _rollback()
+        return (
+            "Файлы zapret распакованы, но каталог стратегий не обновлён: "
+            + str(exc)
+            + ". Обновление не отмечено завершённым; повторите попытку."
+        )
 
     # Record the version so the same update isn't offered again.
     save_local_version(zapret_dir, rel.tag)

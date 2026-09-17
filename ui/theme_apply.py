@@ -194,6 +194,23 @@ class ThemeApplyMixin:
         for lbl in (getattr(self, "home_tg_status_label", None), getattr(self, "home_zap_status_label", None)):
             if lbl is not None:
                 lbl.setStyleSheet(status_style)
+        # Action-card captions are child labels painted above a transparent
+        # QPushButton. They do not inherit the button's QSS colour, so leaving
+        # their original white palette makes both cards unreadable in Light.
+        action_title_style = (
+            f"color: {home_text}; font-size: 22px; font-weight: 700; "
+            "background: transparent;"
+        )
+        action_sub_style = (
+            f"color: {home_text_muted}; font-size: 15px; background: transparent;"
+        )
+        for attr in ("btn_auto", "btn_check"):
+            title = getattr(self, attr + "_deco_title", None)
+            subtitle = getattr(self, attr + "_deco_sub", None)
+            if title is not None:
+                title.setStyleSheet(action_title_style)
+            if subtitle is not None:
+                subtitle.setStyleSheet(action_sub_style)
         if hasattr(self, "home_auto_panel"):
             panel = self.home_auto_panel
             if hasattr(panel, "title"):
@@ -288,6 +305,10 @@ class ThemeApplyMixin:
         if hasattr(self, "btn_check"):
             self.btn_check.setIcon(QIcon() if not show_decor else QIcon(asset_path("check_icon_256.png")))
             self.btn_check.setIconSize(QSize(0, 0) if not show_decor else QSize(50, 50))
+        for attr in ("btn_auto", "btn_check"):
+            deco_icon = getattr(self, attr + "_deco_icon", None)
+            if deco_icon is not None:
+                deco_icon.setVisible(show_decor)
         # Update the theme-selector button label (in case it was created
         # before the theme was applied — e.g. on first launch).
         if hasattr(self, "btn_theme_select"):
