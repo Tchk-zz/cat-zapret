@@ -35,6 +35,8 @@ import sys
 from pathlib import Path
 from urllib import error, request
 
+import requests as http_requests
+
 ROOT = Path(__file__).resolve().parent.parent
 REPO = "Tchk-zz/cat-zapret"
 ASSET_NAME = "ZapretGUI-Setup.exe"
@@ -90,6 +92,24 @@ def _call(
     body = None
     if data is not None:
         body = data if raw else json.dumps(data).encode("utf-8")
+    if raw:
+        headers = {
+            "Authorization": "Bearer " + token,
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "zapret-gui-release-script",
+            "Content-Type": content_type,
+        }
+        try:
+            resp = http_requests.request(
+                method, url, headers=headers, data=body, timeout=(30, 900)
+            )
+        except http_requests.RequestException as exc:
+            raise SystemExit(f"{method} {url} -> network error: {exc}") from exc
+        if not resp.ok:
+            raise SystemExit(f"{method} {url} -> HTTP {resp.status_code}\n{resp.text}")
+        return resp.json() if resp.text.strip() else {}
+
     req = request.Request(url, data=body, method=method)
     req.add_header("Authorization", "Bearer " + token)
     req.add_header("Accept", "application/vnd.github+json")
