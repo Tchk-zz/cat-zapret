@@ -184,7 +184,12 @@ def main():
         print("created the release")
 
     # Re-uploading over an existing asset is an error, so drop the old copy.
-    for asset in release.get("assets") or []:
+    # Query the assets endpoint explicitly: interrupted uploads remain in the
+    # ``starter`` state and are not always included in the release payload.
+    assets = _call(
+        "GET", f"{API}/repos/{REPO}/releases/{release['id']}/assets", token
+    ) or []
+    for asset in assets:
         if asset.get("name") == ASSET_NAME:
             _call(
                 "DELETE", f"{API}/repos/{REPO}/releases/assets/{asset['id']}", token
