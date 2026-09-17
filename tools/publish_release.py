@@ -102,7 +102,7 @@ def _call(
         }
         try:
             resp = http_requests.request(
-                method, url, headers=headers, data=body, timeout=(30, 900)
+                method, url, headers=headers, data=body, timeout=900
             )
         except http_requests.RequestException as exc:
             raise SystemExit(f"{method} {url} -> network error: {exc}") from exc
