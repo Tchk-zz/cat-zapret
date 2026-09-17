@@ -77,6 +77,8 @@ jobs:
       # same way before every local build.
       - name: Fetch the zapret binaries
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File fetch_zapret.ps1
           if ($LASTEXITCODE -ne 0) { throw "fetch_zapret.ps1 failed with $LASTEXITCODE" }

@@ -213,6 +213,9 @@ def test_build_fetch_validates_hidden_service_and_complete_runtime_data():
     text = Path("fetch_zapret.ps1").read_text(encoding="utf-8")
     assert "Get-ChildItem -LiteralPath $srcRoot -Force" in text
     assert "Copy-Item -LiteralPath $serviceDir.FullName" in text
+    assert "$headers['Authorization']" in text
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    assert "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in workflow
     for required in (
         ".service\\hosts",
         ".service\\ipset-service.txt",

@@ -21,6 +21,13 @@ try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 }
 $headers = @{ 'User-Agent' = 'ZapretGUI-build'; 'Accept' = 'application/vnd.github+json' }
+# GitHub-hosted runners share public IPs, so unauthenticated API requests can
+# hit the 60 req/hour limit before this job starts. Use the workflow token when
+# it is available; local builds still work without one.
+$githubToken = if ($env:GH_TOKEN) { $env:GH_TOKEN } elseif ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } else { '' }
+if ($githubToken) {
+    $headers['Authorization'] = "Bearer $githubToken"
+}
 
 Write-Host 'Querying the latest Flowseal release...'
 try {
