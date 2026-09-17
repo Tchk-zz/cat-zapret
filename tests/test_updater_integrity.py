@@ -256,6 +256,8 @@ class UpdaterIntegrityTests(unittest.TestCase):
         payload = io.BytesIO()
         with zipfile.ZipFile(payload, "w") as zf:
             zf.writestr("bin/winws.exe", b"x" * 4096)
+            zf.writestr("bin/WinDivert.dll", b"dll")
+            zf.writestr("bin/WinDivert64.sys", b"sys")
             zf.writestr("general.bat", "echo winws.exe --wf-tcp=443")
 
         fake_requests = _FakeRequests(payload.getvalue(), chunk_size=64)
@@ -311,6 +313,8 @@ class UpdaterIntegrityTests(unittest.TestCase):
         payload = io.BytesIO()
         with zipfile.ZipFile(payload, "w") as zf:
             zf.writestr("bin/winws.exe", b"new-winws")
+            zf.writestr("bin/WinDivert.dll", b"dll")
+            zf.writestr("bin/WinDivert64.sys", b"sys")
             zf.writestr("general.bat", "echo winws.exe --wf-tcp=443")
 
         calls = []
@@ -342,6 +346,9 @@ class UpdaterIntegrityTests(unittest.TestCase):
         with zipfile.ZipFile(payload, "w") as zf:
             zf.writestr("bin/winws.exe", b"new-winws")
             zf.writestr("bin/cygwin1.dll", b"new-dll")
+            zf.writestr("bin/WinDivert.dll", b"dll")
+            zf.writestr("bin/WinDivert64.sys", b"sys")
+            zf.writestr("general.bat", "echo winws.exe --wf-tcp=443")
 
         calls = []
         old_requests = updater.requests
@@ -382,6 +389,9 @@ class UpdaterIntegrityTests(unittest.TestCase):
         payload = io.BytesIO()
         with zipfile.ZipFile(payload, "w") as zf:
             zf.writestr("bin/readme.txt", b"hello")
+            zf.writestr("bin/winws.exe", b"winws")
+            zf.writestr("bin/WinDivert.dll", b"dll")
+            zf.writestr("bin/WinDivert64.sys", b"sys")
             zf.writestr("general.bat", "echo winws.exe --wf-tcp=443")
 
         old_requests = updater.requests
@@ -494,20 +504,10 @@ class UpdaterIntegrityTests(unittest.TestCase):
             zf.writestr("bin/WinDivert64.sys", b"sys")
             zf.writestr("general.bat", b"echo winws.exe --wf-tcp=443 --dpi-desync=fake")
 
-        class _Resp:
-            content = payload.getvalue()
-            def raise_for_status(self):
-                return None
-
-        class _Requests:
-            @staticmethod
-            def get(*_args, **_kwargs):
-                return _Resp()
-
         old_requests = updater.requests
         old_limit = updater.MAX_MEMBER_BYTES
         try:
-            updater.requests = _Requests()
+            updater.requests = _FakeRequests(payload.getvalue())
             updater.MAX_MEMBER_BYTES = 0
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td)

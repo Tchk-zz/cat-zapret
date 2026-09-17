@@ -9,7 +9,7 @@
 - Windows 11, Python 3.14.6.
 - Исходное состояние git было чистым.
 - Исходный прогон: **222 tests passed**, pyflakes clean (1 заранее разрешённая находка).
-- После текущей серии исправлений: **228 tests passed**, pyflakes clean (69 файлов проверено), direct runtime dependencies OSV clean.
+- После интеграции с `origin/main` и текущей серии исправлений: **241 tests passed**, pyflakes clean (73 файла проверено), direct runtime dependencies OSV clean.
 - Workflow YAML проверен парсером; CI теперь тестирует Python 3.10 и 3.14 на Windows.
 
 ## Upstream gap
@@ -118,7 +118,7 @@
 
 **Исправлено:** release build использует отдельный список точно закреплённых top-level пакетов и PyInstaller; автоматическое обновление pip удалено. CI проверяет заявленный минимум Python 3.10 и release-интерпретатор 3.14.
 
-Файлы: `requirements-build.txt`, `build.bat`, `.github/workflows/tests.yml`.
+Файлы: `requirements-build.txt`, `build.bat`, `.github/workflows/tests.yml`, `.github/workflows/release.yml`.
 
 ### 9. Предупреждения и проверка installer pipeline — Low
 
@@ -152,6 +152,9 @@
 - `AUDIT_PLAN_PROMPT.md`
 - `AUDIT_REPORT.md`
 - `.github/workflows/tests.yml`
+- `.github/workflows/release.yml`
+- `CHANGELOG.md`
+- `VERSION`
 - `app/self_updater.py`
 - `app/updater.py`
 - `app/tg_proxy.py`

@@ -40,9 +40,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
-          pip install "pyinstaller>=6.0"
+          pip install -r requirements-build.txt -r requirements-dev.txt
+
+      - name: Dependency vulnerability scan (OSV)
+        run: python tools/check_vulnerabilities.py
 
       # Never publish something that would be red on main: the two gates of the
       # tests workflow run before anything is compiled.
