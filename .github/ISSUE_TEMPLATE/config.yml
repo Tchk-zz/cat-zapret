@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Скачать последний релиз
+    url: https://github.com/Tchk-zz/cat-zapret/releases/latest
+    about: Установщик и SHA-256 публикуются только здесь.
+  - name: Сообщить об уязвимости приватно
+    url: https://github.com/Tchk-zz/cat-zapret/security/advisories/new
+    about: Не публикуйте детали безопасности в обычном Issue.
+  - name: Документация и решение проблем
+    url: https://github.com/Tchk-zz/cat-zapret#быстрый-старт
+    about: Сначала проверьте инструкции и типовые причины.

@@ -364,17 +364,10 @@ class DownloadAndLaunchTests(unittest.TestCase):
         self.assertTrue(all(0 <= p <= 100 for p in seen))
 
 
-class InstallerLaunchQuotingTests(unittest.TestCase):
-    """`start` is a cmd builtin, so the installer path must arrive quoted."""
+class InstallerLaunchArgumentsTests(unittest.TestCase):
+    """The installer path must be one raw argv item, never shell-quoted."""
 
-    def test_cmd_quote_wraps_and_never_double_wraps(self):
-        self.assertEqual(su._cmd_quote("C:/a b/x.exe"), '"C:/a b/x.exe"')
-        self.assertEqual(su._cmd_quote('"C:/a b/x.exe"'), '"C:/a b/x.exe"')
-
-    @unittest.skipUnless(su.sys.platform == "win32", "cmd /c start is Windows-only")
-    def test_installer_path_with_space_is_quoted(self):
-        # Every "Ivan Petrov" account has a space in %TEMP%. Unquoted, cmd
-        # split the path and the silent update simply did nothing.
+    def _capture_launch(self, temp_folder_name):
         chunks = (b"setup",)
         rel = su.AppRelease(
             tag="v9.9.9",
@@ -387,21 +380,44 @@ class InstallerLaunchQuotingTests(unittest.TestCase):
             _FakeResponse(chunks=chunks, headers={"Content-Length": str(len(chunks[0]))})
         )
         with tempfile.TemporaryDirectory() as td:
-            spaced = Path(td) / "Local Temp"
-            spaced.mkdir()
+            temp_folder = Path(td) / temp_folder_name
+            temp_folder.mkdir()
             changelog_path = Path(td) / "pending_update.json"
-            with mock.patch.object(su.tempfile, "gettempdir", return_value=str(spaced)), \
+            with mock.patch.object(su.tempfile, "gettempdir", return_value=str(temp_folder)), \
                     mock.patch.object(su, "_requests", stub), \
                     mock.patch.object(su, "pending_changelog_path", return_value=changelog_path), \
                     mock.patch.object(su.subprocess, "Popen") as popen:
                 result = su.download_and_launch(rel)
                 argv = list(popen.call_args[0][0])
+                kwargs = dict(popen.call_args.kwargs)
+        return result, argv, kwargs
+
+    def _assert_direct_launch(self, result, argv, kwargs, folder_name):
         self.assertEqual(result, "ok")
-        self.assertEqual(argv[:4], ["cmd", "/c", "start", ""])
-        self.assertTrue(argv[4].startswith('"'))
-        self.assertTrue(argv[4].endswith('"'))
-        self.assertIn("Local Temp", argv[4])
-        self.assertIn("/VERYSILENT", argv)
+        self.assertEqual(Path(argv[0]).parent.name, folder_name)
+        self.assertTrue(Path(argv[0]).name.startswith(su._TMP_PREFIX))
+        self.assertFalse(argv[0].startswith('"'))
+        self.assertFalse(argv[0].endswith('"'))
+        self.assertNotEqual(argv[0].lower(), "cmd")
+        self.assertEqual(argv[1:], ["/VERYSILENT", "/SUPPRESSMSG", "/NORESTART"])
+        self.assertIs(kwargs.get("shell"), False)
+
+    def test_plain_temp_path_is_passed_directly(self):
+        captured = self._capture_launch("Temp")
+        self._assert_direct_launch(*captured, folder_name="Temp")
+
+    def test_temp_path_with_spaces_is_passed_directly(self):
+        # Regression for the production failure where pre-quoting turned the
+        # quote characters into part of the filename passed to Windows.
+        captured = self._capture_launch("Local Temp")
+        self._assert_direct_launch(*captured, folder_name="Local Temp")
+
+    @unittest.skipUnless(su.sys.platform == "win32", "Windows flags are platform-only")
+    def test_windows_launch_is_detached(self):
+        _, _, kwargs = self._capture_launch("Temp")
+        expected = su.subprocess.DETACHED_PROCESS | su.subprocess.CREATE_NEW_PROCESS_GROUP
+        self.assertEqual(kwargs.get("creationflags"), expected)
+        self.assertIs(kwargs.get("close_fds"), True)
 
 
 if __name__ == "__main__":

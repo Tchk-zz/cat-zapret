@@ -1,25 +1,90 @@
-# Contributing
+# Как внести вклад
 
-Thank you for helping improve Zapret GUI.
+Спасибо за интерес к Zapret GUI. Проект Windows-специфичен и управляет сетевым
+драйвером с повышенными правами, поэтому изменения должны быть небольшими,
+проверяемыми и безопасными для пользовательских настроек.
 
-## Development setup
+## Перед началом
 
-```bat
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-python main.py
+- Обсудите крупную функцию в Issue до реализации.
+- Для исправления бага приложите воспроизводимый сценарий и ожидаемое поведение.
+- Не публикуйте токены, прокси-пароли, приватные IP, полные пользовательские пути
+  и необезличенные журналы.
+- Уязвимости сообщайте по инструкции в [SECURITY.md](SECURITY.md), не в публичном
+  Issue.
+
+## Локальная среда
+
+Поддерживаются Python 3.10 (минимум) и Python 3.14 (release toolchain).
+Рекомендуется Windows 10/11 x64.
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-## Before a pull request
+`vendor/zapret/` не хранится в Git. Для обычных unit-тестов bundle не нужен;
+проверенный upstream-комплект загружается только сборочным bootstrapper'ом.
 
-1. Run syntax checks:
-   ```bat
-   python -m compileall .
-   ```
-2. Run tests:
-   ```bat
-   python -m unittest discover -s tests
-   ```
-3. Do not commit `vendor/zapret` binaries, `dist`, `build`, personal config, or logs.
-4. Keep third-party notices current if dependencies or bundled files change.
+## Обязательные проверки
+
+Перед Pull Request выполните:
+
+```powershell
+python tools/check_lint.py
+python tools/check_vulnerabilities.py
+python -m pytest tests/ -q --no-header
+python -m compileall -q app ui tools
+```
+
+GUI-тесты работают headless через `QT_QPA_PLATFORM=offscreen`. При изменении тем
+или компоновки дополнительно запустите `python tools/render_gui_audit.py` и
+проверьте изображения визуально. Временный каталог `audit_artifacts/` в Git не
+добавляется; в `docs/assets/` кладутся только выбранные стабильные скриншоты.
+
+## Принципы изменений
+
+- Не отключайте TLS verification и проверку hostname.
+- Не запускайте скачанный EXE до проверки GitHub SHA-256 и размера.
+- Любая замена пакета Zapret или Telegram proxy должна идти через staging,
+  структурную проверку и rollback.
+- Пользовательские списки, конфигурация и неизвестные локальные файлы нельзя
+  удалять как «устаревший upstream».
+- Не добавляйте ручные кавычки к элементам argv: передавайте путь отдельным
+  аргументом и позволяйте `subprocess` выполнить платформенное экранирование.
+- Не коммитьте сборки, кэши, скачанные ZIP/EXE и локальные журналы.
+
+## Стиль
+
+- Сохраняйте существующий Python-стиль и type hints там, где они повышают ясность.
+- Публичное поведение покрывайте regression-тестом.
+- Сообщения пользователю пишите понятным русским языком; технический комментарий
+  может быть на английском, если так согласован соседний код.
+- Обновляйте README/CHANGELOG при изменении поведения.
+
+## Работа с upstream
+
+Не копируйте новую версию Flowseal поверх активного каталога вручную. Используйте
+существующие fetch/update-пути и проверьте:
+
+1. release asset и исходный tag соответствуют друг другу;
+2. обязательный core bundle присутствует;
+3. `.service`, HOSTS, IPSet, `lists`, BAT, `bin` и `utils` не потерялись;
+4. user-файлы исключены из managed manifest;
+5. исчезнувшие upstream-файлы удаляются только по проверенному манифесту;
+6. лицензии и `THIRD_PARTY_NOTICES.md` актуальны.
+
+## Pull Request
+
+PR должен содержать:
+
+- краткое описание проблемы и решения;
+- ссылку на Issue, если он существует;
+- тесты и их результат;
+- скриншоты для визуальных изменений;
+- оценку влияния на обновление и пользовательские данные;
+- запись в `CHANGELOG.md`, если изменение заметно пользователю.
+
+Не меняйте `VERSION` и не создавайте release tag без согласования с владельцем.
+GitHub Actions повторно выполняет lint, OSV и тесты на Windows.

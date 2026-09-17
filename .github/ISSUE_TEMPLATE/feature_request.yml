@@ -1,0 +1,63 @@
+name: Предложить улучшение
+description: Новая функция или изменение поведения Zapret GUI
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Опишите задачу пользователя, а не только желаемую реализацию. Для уязвимостей используйте SECURITY.md.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Перед отправкой
+      options:
+        - label: Я проверил, что похожего предложения ещё нет.
+          required: true
+        - label: Предложение не требует отключения TLS, проверки хеша или других защитных механизмов.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую проблему решает предложение?
+      placeholder: Сейчас приходится ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Желаемое поведение
+      placeholder: Я хотел бы ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Рассмотренные альтернативы
+      placeholder: Можно решить иначе через ...
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Область
+      options:
+        - Интерфейс и темы
+        - Стратегии и диагностика
+        - Обновление Zapret
+        - Telegram proxy
+        - Установка и самообновление
+        - Документация и сборка
+        - Другое
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Дополнительный контекст или макет
+      description: Можно приложить скриншоты, схему или ссылки на upstream-изменение.

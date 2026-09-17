@@ -3,7 +3,7 @@
 #
 # It is triggered by a v* tag, so cutting a release is one command locally:
 #
-#     git tag v1.9.4 && git push origin v1.9.4
+#     git tag v1.9.7 && git push origin v1.9.7
 #
 # workflow_dispatch exists for a re-run after a job failed with the tag already
 # pushed: tools/publish_release.py reuses an existing release and replaces the
@@ -28,12 +28,12 @@ jobs:
 
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Same interpreter as the tests workflow and as local development, so the
       # published exe is built by the Python the suite actually ran on.
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.14"
           cache: pip
@@ -116,7 +116,7 @@ jobs:
 
       # Kept even when publishing fails, so a token problem never costs a rebuild.
       - name: Upload the installer as a build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ZapretGUI-Setup-${{ steps.version.outputs.version }}
           path: Output/ZapretGUI-Setup.exe

@@ -1,16 +1,72 @@
-# Security policy
+# Политика безопасности
 
-## Supported versions
+Zapret GUI скачивает сетевые компоненты и запускает установщик с повышенными
+правами. Сообщения о проблемах в этих путях особенно важны.
 
-Only the latest public release is supported.
+## Поддерживаемые версии
 
-## Reporting a vulnerability
+| Версия | Обновления безопасности |
+|---|---|
+| Последний опубликованный релиз | ✅ Да |
+| Более старые версии | ❌ Нет; сначала обновитесь |
 
-Please do not open public issues for vulnerabilities. Contact the maintainer by
-private channel first, or use GitHub private vulnerability reporting if enabled.
+Исправления безопасности выпускаются для последнего релиза. Старую проблему могут
+попросить воспроизвести после ручного обновления.
 
-## Important safety notes
+## Как сообщить об уязвимости
 
-Zapret GUI starts `winws.exe` and may install a Windows service. It requires
-administrator rights because WinDivert needs elevated privileges. Download
-releases only from the official repository, and verify checksums when provided.
+1. **Не создавайте публичный Issue с техническими деталями или exploit-кодом.**
+2. Используйте [Private vulnerability reporting](https://github.com/Tchk-zz/cat-zapret/security/advisories/new), чтобы открыть приватный draft advisory.
+3. Если форма недоступна, создайте публичный Issue только с заголовком
+   `Security contact request`, без деталей; владелец предложит приватный канал.
+
+В отчёте полезны:
+
+- версия Zapret GUI и Windows;
+- затронутый компонент или файл;
+- минимальные шаги воспроизведения;
+- ожидаемое и фактическое поведение;
+- оценка воздействия;
+- безопасный proof of concept, если он необходим.
+
+Удалите токены, пароли, приватные адреса, персональные пути и данные трафика.
+Подтверждение, анализ и срок исправления зависят от воспроизводимости и тяжести;
+координация публикации ведётся в приватном advisory.
+
+## В области рассмотрения
+
+- проверка и запуск собственного установщика;
+- загрузка, распаковка и установка Zapret bundle;
+- managed manifest, сохранение user-файлов и rollback;
+- обновление встроенного Telegram proxy;
+- TLS, WebSocket и MTProto обработка;
+- командные строки, пути Windows и повышение привилегий;
+- хранение конфигурации, журналов и диагностических данных.
+
+Не рассматриваются как уязвимость сами по себе:
+
+- известные ложные срабатывания антивирусов на WinDivert или `winws.exe`;
+- блокировки конкретного провайдера без нарушения границы безопасности приложения;
+- проблемы старой версии, уже исправленные и не воспроизводимые в latest.
+
+## Безопасное получение релиза
+
+- скачивайте `ZapretGUI-Setup.exe` только из
+  https://github.com/Tchk-zz/cat-zapret/releases;
+- сверяйте SHA-256 с описанием соответствующего релиза;
+- не запускайте переименованные копии из сторонних зеркал;
+- помните, что установка требует прав администратора из-за WinDivert.
+
+## Защитные свойства проекта
+
+- жёсткие лимиты размера загрузок и распаковки;
+- запрет path traversal, symlink и encrypted ZIP entries;
+- проверка обязательного состава до остановки процесса или записи;
+- staging и rollback при обновлении пакетов;
+- проверка SHA-256 собственного установщика;
+- строгая TLS и hostname verification;
+- лимит WebSocket frame и message;
+- CI: pyflakes, pytest и OSV direct-dependency scan.
+
+Техническое состояние и остаточные риски описаны в
+[docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md).

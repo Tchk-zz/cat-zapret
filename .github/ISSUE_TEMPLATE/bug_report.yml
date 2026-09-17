@@ -1,0 +1,88 @@
+name: Сообщить об ошибке
+description: Воспроизводимая проблема в Zapret GUI
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо за отчёт. Не публикуйте токены, пароли, приватные IP и необезличенные журналы. Для уязвимостей используйте SECURITY.md.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Перед отправкой
+      options:
+        - label: Я использую последний опубликованный релиз.
+          required: true
+        - label: Я скачал приложение из официального GitHub Releases.
+          required: true
+        - label: Я проверил, что похожего Issue ещё нет.
+          required: true
+        - label: В отчёте нет секретов и персональных данных.
+          required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: Версия Zapret GUI
+      placeholder: "1.9.7"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: windows-version
+    attributes:
+      label: Версия Windows
+      options:
+        - Windows 11 x64
+        - Windows 10 x64
+        - Другая или неизвестна
+    validations:
+      required: true
+
+  - type: input
+    id: strategy
+    attributes:
+      label: Стратегия
+      description: Укажите название стратегии, если проблема связана с запуском или обходом.
+      placeholder: "general (ALT...).bat или не применимо"
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Шаги воспроизведения
+      placeholder: |
+        1. Открыл ...
+        2. Нажал ...
+        3. Появилось ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемое поведение
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Фактическое поведение
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Обезличенный журнал или скриншоты
+      description: Перетащите файлы сюда. Удалите имена пользователей, полные пути, IP, токены и пароли.
+      render: text
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Дополнительный контекст
+      description: Антивирус, VPN, провайдер, способ установки и всё, что помогает воспроизвести проблему.

@@ -1,15 +1,17 @@
 Zapret GUI
-Copyright (c) 2026 Имечко Фамилия
+Copyright (C) 2026 Tchk-zz
 
-This project is an independent graphical interface for managing the Flowseal
+SPDX-License-Identifier: GPL-3.0-only
+
+Zapret GUI is an independent graphical interface for managing the Windows
 zapret-discord-youtube bundle. It is not affiliated with Flowseal, bol-van,
-Discord, YouTube, Google, Roblox, Riot Games, Valve, Epic Games, Blizzard,
-FACEIT, Microsoft, The Qt Company, Riverbank Computing or ReQrypt.
+Discord, YouTube, Google, Telegram, Microsoft, The Qt Company, Riverbank
+Computing, basil00, ReQrypt, or any other service named by the application.
 
-The GUI code in this repository is distributed under the GNU General Public
-License version 3.0 (GPL-3.0), primarily because the application uses PyQt6,
-which is GPL-3.0 unless a commercial PyQt license is obtained.
+The original code in this repository is distributed under the GNU General
+Public License, version 3 only. See LICENSE for the complete terms.
 
-The application downloads or embeds third-party components at build/runtime.
-Their copyright notices and licenses remain with their respective authors.
-See THIRD_PARTY_NOTICES.md for details.
+The application embeds, downloads, or works with third-party components whose
+copyrights and licenses remain with their respective authors. Their inclusion
+does not change those terms. See THIRD_PARTY_NOTICES.md and the license files
+shipped alongside each component.

@@ -1,155 +1,98 @@
-# Чек-лист выпуска релиза Zapret GUI
+# Release checklist
 
-Документ описывает то, как релиз делается **сейчас**: сборка exe через
-PyInstaller, установщик Inno Setup, публикация установщика на GitHub и
-обновление у пользователей кнопкой «Обновить приложение» внутри программы.
+Релиз публикуется только через `.github/workflows/release.yml`. Локальная сборка
+может использоваться для диагностики, но официальным считается installer,
+созданный GitHub Actions из release tag.
 
-Окружение разработчика (для справки):
+## 1. Подготовка
 
-- Python 3.14 (в PATH, команда `python`), PyQt6, Windows.
-- Git: `C:\Program Files\Git\cmd\git.exe` (в PATH, команда `git`).
-- Inno Setup: `C:\Program Files (x86)\Inno Setup 6\ISCC.exe`.
-- GitHub CLI (`gh`) 2.97.0 — установлен (`winget install --id GitHub.cli`),
-  но для релиза не обязателен и отдельной авторизации не требует.
-- Публикация: `python tools/publish_release.py` — REST API GitHub, токен
-  берётся из `git credential fill` (тот же, что у `git push`), никуда не
-  печатается и не сохраняется. См. раздел публикации.
+- [ ] Рабочее дерево чистое и `main` синхронизирован с `origin/main`.
+- [ ] В `VERSION` записан следующий SemVer без `v` (например, `1.9.7`).
+- [ ] Вверху `CHANGELOG.md` есть секция с той же версией и датой.
+- [ ] Документация и заметки миграции отражают пользовательские изменения.
+- [ ] Проверены лицензии изменённых зависимостей и upstream-компонентов.
+- [ ] В репозитории нет EXE, ZIP, журналов, кэшей, секретов и персональных данных.
 
----
+## 2. Зависимости
 
-## 1. Проверка кода и тестов
+- [ ] Runtime-диапазоны в `requirements.txt` совместимы с Python 3.10 и 3.14.
+- [ ] Top-level release pins в `requirements-build.txt` обновлены осознанно.
+- [ ] Для каждого нового pin просмотрены changelog и license metadata.
+- [ ] `python tools/check_vulnerabilities.py` не находит известных проблем.
 
-Перед сборкой обязательно удалить кэш Python (`__pycache__`), иначе тесты могут
-упасть с ошибкой доступа к памяти.
+Не обновляйте версии во время самой сборки: одинаковый commit должен давать один
+и тот же набор top-level зависимостей.
 
-```bat
+## 3. Quality gates
+
+В чистой virtual environment:
+
+```powershell
 python tools/check_lint.py
-python -m pytest tests/ -q
+python tools/check_vulnerabilities.py
+python -m pytest tests/ -q --no-header
+python -m compileall -q app ui tools
 ```
 
-Эталон:
+Дополнительно:
 
-- `check_lint.py` печатает `pyflakes: clean (1 known finding ignored, ... files checked)`.
-  Единственное разрешённое замечание — строка `import app.tg_proxy  # noqa: F401`
-  в `tests/test_tg_proxy_logic.py`. Вендорная папка `app/tg_proxy_engine/` не
-  проверяется вообще.
-- pytest: все тесты проходят (`... passed`).
+- [ ] `python tools/render_gui_audit.py` — визуально проверены Light, Purple и все вкладки.
+- [ ] `git diff --check` не показывает пробелы или конфликты.
+- [ ] Проверены `VERSION`, package version и Inno version contract.
+- [ ] При изменении updater выполнены тесты обычного пути, пути с пробелами,
+      checksum mismatch, truncated или oversized download и rollback.
 
-Если `check_lint.py` печатает `pyflakes found new issues` — релиз не собираем,
-сначала правим код.
+## 4. Commit и tag
 
-## 2. Поднять версию
-
-Версия правится **только** в файле `VERSION` в корне проекта (одна строка вида
-`1.8.5`). Дальше она разъезжается автоматически:
-
-- `app/__init__.py` читает `VERSION` (`app.__version__`);
-- `build_installer.bat` читает `VERSION` и передаёт её в ISCC как
-  `/DMyAppVersion=<версия>`;
-- `installer.iss` кладёт файл `VERSION` рядом с exe при установке;
-- `app/self_updater.py` читает эту установленную копию, чтобы понять, какая
-  версия стоит у пользователя.
-
-Нигде больше версию руками писать не нужно.
-
-## 3. Сборка exe
-
-Перед сборкой закрыть работающий ZapretGUI (в том числе иконку в трее) и
-установленную копию — Windows держит exe заблокированным.
-
-```bat
-python -m PyInstaller zapret-gui.spec --noconfirm --clean
-```
-
-Если `dist\ZapretGUI.exe` занят, сборку можно перенаправить:
-
-```bat
-python -m PyInstaller zapret-gui.spec --noconfirm --clean --distpath dist_release
-```
-
-## 4. Сборка установщика
-
-```bat
-build_installer.bat
-```
-
-или вручную (версию подставить из `VERSION`, путь к exe — если собирали в
-`dist_release`):
-
-```bat
-"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=1.8.5 /DMyAppExeSource="dist_release\ZapretGUI.exe" installer.iss
-```
-
-Результат: `Output\ZapretGUI-Setup.exe`.
-
-## 5. Проверка перед публикацией
-
-- [ ] Установщик запускается, устанавливает программу в `C:\Program Files\ZapretGUI\`.
-- [ ] Рядом с exe появился файл `VERSION` с новой версией. **Без него**
-      программа будет предлагать одно и то же обновление бесконечно.
-- [ ] Программа запускается, обход работает, темы переключаются.
-- [ ] Галочка автозапуска в установщике создаёт задачу в планировщике и не
-      вызывает запрос UAC при входе в Windows.
-
-## 6. Один чистый коммит
-
-Все правки релиза уходят одним осмысленным коммитом (не серией мелких).
-Опубликованную историю не переписываем.
-
-```bat
+```powershell
 git add -A
-git commit -m "release: 1.8.5 — краткое описание"
+git commit -m "release: 1.9.7"
 git push origin main
+git tag -a v1.9.7 -m "Zapret GUI 1.9.7"
+git push origin v1.9.7
 ```
 
-Дождаться, что автопроверка на GitHub (`.github/workflows/tests.yml`) стала
-зелёной.
+Tag обязан совпадать с `v` плюс содержимое `VERSION`. Push tag запускает release
+workflow, который повторно выполняет lint, OSV и tests, получает проверенный
+Zapret bundle, собирает PyInstaller EXE и Inno Setup installer, а затем
+публикует Release.
 
-## 7. Контрольная сумма установщика
+## 5. Проверка GitHub Actions
 
-```bat
-python -c "import hashlib;print(hashlib.sha256(open(r'Output/ZapretGUI-Setup.exe','rb').read()).hexdigest())"
-```
+- [ ] Tests workflow на `main` зелёный для Python 3.10 и 3.14.
+- [ ] Release workflow завершился без warning об устаревшем Node runtime.
+- [ ] Артефакт `ZapretGUI-Setup-<version>` доступен.
+- [ ] В Release ровно актуальный `ZapretGUI-Setup.exe`.
+- [ ] Release notes взяты из правильной секции CHANGELOG.
+- [ ] В notes опубликован SHA-256; независимо вычисленный hash совпадает.
 
-Сумму обязательно вставить в описание релиза.
+## 6. Smoke test
 
-## 8. Публикация релиза на GitHub
+В отдельной Windows VM или контролируемой тестовой установке:
 
-- Тег: `vX.Y.Z` (совпадает с `VERSION`).
-- Приложить файл **`ZapretGUI-Setup.exe`** — имя менять нельзя, встроенное
-  обновление ищет ровно такое имя (`INSTALLER_ASSET` в `app/self_updater.py`).
-- В описание добавить:
-  - что изменилось;
-  - SHA-256 установщика;
-  - требование Windows и права администратора (нужны для WinDivert);
-  - предупреждение о ложных срабатываниях антивируса на WinDivert/winws;
-  - ссылку на исходный проект zapret-discord-youtube.
-- Токен для публикации брать из `git credential fill`. Токен **никогда** не
-  печатать в чат, в логи и в файлы.
+- [ ] чистая установка;
+- [ ] запуск с UAC и отображение версии;
+- [ ] запуск и остановка Zapret, тест обхода;
+- [ ] полное обновление bundle с HOSTS, IPSet, lists и `.service`;
+- [ ] сохранение user lists, config и custom strategies;
+- [ ] Telegram proxy start, update и stop;
+- [ ] обновление приложения из предыдущей исправной версии;
+- [ ] uninstall без удаления пользовательских данных вне каталога приложения.
 
-## 9. Проверка обновления «как у пользователя»
+### Миграция 1.9.5/1.9.6 → 1.9.7
 
-Обязательный шаг: обновление ломалось дважды.
+Старый updater может не запустить скачанный EXE из-за двойного quoting. Для этого
+перехода обязательно укажите в Release notes: при ошибке поиска временного файла
+нужно один раз скачать 1.9.7 вручную. После установки 1.9.7 последующие обновления
+проверяются тем же набором regression-тестов.
 
-- [ ] Установить **предыдущую** версию, запустить, нажать «Обновить приложение».
-- [ ] Обновление скачивается, показывает совпадение SHA-256, установщик
-      запускается и НЕ убивает сам себя.
-- [ ] После установки программа открывается уже в новой версии, и повторно
-      обновление не предлагается.
+## 7. После публикации
 
-Важно: если у файла установщика на GitHub нет опубликованной контрольной суммы,
-программа откажется ставить обновление — это защита, а не ошибка.
+- [ ] Latest Release открывается и download не возвращает 404.
+- [ ] README badges и ссылка Latest отображают новую версию.
+- [ ] GitHub repository metadata и topics актуальны.
+- [ ] Issue tracker проверен на регрессии первых установок.
 
-## 10. Лицензии и атрибуция (проверять при каждом релизе)
-
-- [ ] Исходники остаются под GPL-3.0 (требование PyQt6).
-- [ ] Не коммитить `vendor/zapret/bin`, скачанные архивы, `dist`, `build`,
-      локальные настройки и логи.
-- [ ] Сохранены ссылки и упоминания:
-  - Flowseal/zapret-discord-youtube — https://github.com/Flowseal/zapret-discord-youtube
-  - bol-van/zapret — https://github.com/bol-van/zapret
-  - WinDivert — https://github.com/basil00/WinDivert
-- [ ] В README нет намёка на связь с Discord/YouTube/Flowseal/bol-van.
-- [ ] `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md` на месте и попадают в
-      установку.
-- [ ] Логотипы и названия Discord/YouTube не используются в оформлении.
+Если workflow упал до публикации, исправьте причину и перезапустите его: publish
+script обновляет существующий Release и asset идемпотентно. Не создавайте второй
+tag с тем же номером и не загружайте непроверенный локальный installer вручную.

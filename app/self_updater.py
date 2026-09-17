@@ -130,23 +130,6 @@ def local_version() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Process helpers
-# ---------------------------------------------------------------------------
-
-def _cmd_quote(path: str) -> str:
-    """Wrap a path in double quotes for `cmd /c start`.
-
-    Needed because `start` is a cmd builtin: it re-parses the command line
-    itself, so a path with a space in it must arrive already quoted. Already
-    quoted input is returned unchanged so the value is never double-wrapped.
-    """
-    text = str(path)
-    if len(text) > 1 and text.startswith('"') and text.endswith('"'):
-        return text
-    return '"' + text + '"'
-
-
-# ---------------------------------------------------------------------------
 # GitHub API
 # ---------------------------------------------------------------------------
 
@@ -486,41 +469,27 @@ def download_and_launch(
     # a silent install has no UI of its own to tell the user anything changed.
     _write_pending_changelog(release)
 
-    # The installer must NOT stay a child of this process. Setup closes the
-    # running ZapretGUI.exe with taskkill before copying files; any variant of
-    # that call using /T walks the process tree and would kill Setup itself,
-    # leaving the old version installed (measured: DETACHED_PROCESS does not
-    # break the parent/child link, it only detaches the console). Launching
-    # through `cmd /c start` inserts a throwaway cmd that exits immediately, so
-    # Setup is orphaned and survives whatever happens to this process.
-    #
     # /VERYSILENT /SUPPRESSMSG /NORESTART run the whole Inno Setup wizard in
-    # the background: no window, no clicks, no "installation complete"
-    # message box. installer.iss then relaunches ZapretGUI.exe itself once
-    # the silent install finishes (its Run entry guarded by WizardSilent), so
-    # the app reappears on its own with the changelog popup above.
+    # the background. installer.iss then relaunches ZapretGUI.exe once the
+    # silent install finishes (its Run entry is guarded by WizardSilent).
+    #
+    # Pass the executable path as a raw argv item and let subprocess/CreateProcess
+    # quote it exactly once. The old `cmd /c start` path pre-quoted tmp_path and
+    # Windows serialized those quote characters again, so Setup was looked up
+    # under a literal, invalid filename. This affected both short TEMP paths
+    # (for example ADMINI~1) and paths containing spaces.
+    #
+    # Setup terminates ZapretGUI.exe without taskkill /T, so launching Setup as a
+    # direct detached child is safe: closing this app does not terminate Setup.
     silent_args = ["/VERYSILENT", "/SUPPRESSMSG", "/NORESTART"]
     try:
-        kwargs: dict = {}
+        kwargs: dict = {"shell": False}
         if sys.platform == "win32":
             kwargs["creationflags"] = (
                 subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
             )
             kwargs["close_fds"] = True
-            # The empty "" is the window title argument of `start`; without it
-            # a quoted path would be taken as the title and nothing would run.
-            # tmp_path MUST be quoted by hand. `start` is a cmd builtin, so
-            # the quoting subprocess does for a normal argv never reaches it --
-            # cmd re-splits the command line on spaces. Any user whose TEMP
-            # path contains a space ("C:/Users/Ivan Petrov/AppData/...") got a
-            # silent no-op instead of an update, because cmd tried to run
-            # "C:/Users/Ivan" with "Petrov/..." as its argument.
-            subprocess.Popen(
-                ["cmd", "/c", "start", "", _cmd_quote(tmp_path)] + silent_args,
-                shell=False, **kwargs
-            )
-        else:
-            subprocess.Popen([tmp_path] + silent_args, **kwargs)
+        subprocess.Popen([tmp_path, *silent_args], **kwargs)
     except Exception as exc:
         _discard(tmp_path)
         return "Ошибка запуска установщика: " + str(exc)

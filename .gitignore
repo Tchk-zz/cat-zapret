@@ -4,20 +4,29 @@ __pycache__/
 *.pyd
 *.egg-info/
 .pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
 .venv/
 venv/
 env/
 
-# --- Build output ---
+# --- Build and generated output ---
 build/
 build_release/
 dist/
 dist_release/
 Output/
+audit_artifacts/
 *.exe
 *.spec.bak
 
-# --- Bundled third-party binaries (huge, re-downloaded by the bootstrapper) ---
+# --- Bundled third-party binaries (restored by the verified bootstrapper) ---
 vendor/zapret/
 vendor/*.zip
 
@@ -27,8 +36,16 @@ crash.log
 config.json
 *.zapretgui.new
 
+# --- Temporary files ---
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
 # --- IDE / OS ---
 .vscode/
 .idea/
+.DS_Store
 Thumbs.db
 desktop.ini

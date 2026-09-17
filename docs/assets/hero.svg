@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">Zapret GUI</title>
+  <desc id="desc">Стильный баннер независимого Windows-интерфейса для Zapret</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#09090f"/>
+      <stop offset="0.5" stop-color="#171329"/>
+      <stop offset="1" stop-color="#30165b"/>
+    </linearGradient>
+    <radialGradient id="orb" cx="50%" cy="45%" r="58%">
+      <stop offset="0" stop-color="#d8b4fe" stop-opacity=".95"/>
+      <stop offset=".38" stop-color="#8b5cf6" stop-opacity=".72"/>
+      <stop offset="1" stop-color="#6d28d9" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse">
+      <path d="M36 0H0V36" fill="none" stroke="#c4b5fd" stroke-opacity=".055"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="420" rx="34" fill="url(#bg)"/>
+  <rect width="1200" height="420" rx="34" fill="url(#grid)"/>
+  <circle cx="1008" cy="202" r="230" fill="url(#orb)"/>
+  <path d="M0 346C194 305 362 390 582 342S986 287 1200 333V420H0Z" fill="#8b5cf6" fill-opacity=".07"/>
+  <g transform="translate(72 62)">
+    <g transform="translate(0 0)">
+      <rect width="68" height="68" rx="19" fill="#8b5cf6"/>
+      <path d="M18 22l8-9 7 10h3l7-10 8 9v22c0 8-7 14-16 14h-1c-9 0-16-6-16-14V22Z" fill="#fff"/>
+      <circle cx="29" cy="37" r="2.7" fill="#6d28d9"/><circle cx="43" cy="37" r="2.7" fill="#6d28d9"/>
+      <path d="M33 45h6l-3 3Z" fill="#6d28d9"/>
+    </g>
+    <text x="0" y="145" fill="#fff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="68" font-weight="800" letter-spacing="2">ZAPRET GUI</text>
+    <rect x="1" y="166" width="540" height="5" rx="3" fill="url(#line)"/>
+    <text x="1" y="216" fill="#ddd6fe" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="24" font-weight="500">Управление обходом блокировок — понятно и безопасно</text>
+    <g transform="translate(0 257)" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16" font-weight="600">
+      <g><rect width="178" height="44" rx="22" fill="#ffffff" fill-opacity=".09" stroke="#a78bfa" stroke-opacity=".38"/><text x="22" y="28" fill="#f5f3ff">Windows 10 / 11</text></g>
+      <g transform="translate(192)"><rect width="196" height="44" rx="22" fill="#ffffff" fill-opacity=".09" stroke="#a78bfa" stroke-opacity=".38"/><text x="22" y="28" fill="#f5f3ff">Полная синхронизация</text></g>
+      <g transform="translate(402)"><rect width="153" height="44" rx="22" fill="#ffffff" fill-opacity=".09" stroke="#22d3ee" stroke-opacity=".38"/><text x="22" y="28" fill="#ecfeff">Safe rollback</text></g>
+    </g>
+  </g>
+  <g transform="translate(875 92)" filter="url(#glow)">
+    <path d="M65 65L93 25l28 37c14-6 31-6 45 0l28-37 28 40v98c0 57-45 102-101 102S20 220 20 163V65l45 0Z" fill="#171329" stroke="#c4b5fd" stroke-width="8" stroke-linejoin="round"/>
+    <path d="M54 73l36-3-22-24Z" fill="#8b5cf6"/><path d="M188 73l-36-3 22-24Z" fill="#8b5cf6"/>
+    <ellipse cx="84" cy="140" rx="13" ry="17" fill="#22d3ee"/><ellipse cx="158" cy="140" rx="13" ry="17" fill="#22d3ee"/>
+    <circle cx="88" cy="135" r="4" fill="#fff"/><circle cx="162" cy="135" r="4" fill="#fff"/>
+    <path d="M110 171h22l-11 10Z" fill="#f0abfc"/>
+    <path d="M121 181c-2 18-27 19-34 8m34-8c2 18 27 19 34 8" fill="none" stroke="#ddd6fe" stroke-width="5" stroke-linecap="round"/>
+    <path d="M76 174L28 160m48 31l-50 5m140-22 48-14m-48 31 50 5" stroke="#ddd6fe" stroke-width="4" stroke-linecap="round" opacity=".8"/>
+  </g>
+  <rect x="1" y="1" width="1198" height="418" rx="33" fill="none" stroke="#a78bfa" stroke-opacity=".25" stroke-width="2"/>
+</svg>

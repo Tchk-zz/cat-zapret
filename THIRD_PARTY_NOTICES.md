@@ -1,59 +1,75 @@
 # Third-party notices
 
-This project includes or depends on third-party software. Keep this file updated
-when dependencies change.
+Zapret GUI includes, downloads, or builds against third-party software. Copyright
+and license terms remain with the respective authors. Keep the corresponding
+upstream license files when redistributing a build.
 
-## zapret-discord-youtube by Flowseal
+> This overview is informational. The license text supplied by each upstream
+> project is authoritative.
+
+## Flowseal / zapret-discord-youtube
 
 - Repository: https://github.com/Flowseal/zapret-discord-youtube
-- Role: source of Windows zapret bundle, strategies, lists and `winws.exe` used by the GUI.
-- License: MIT, according to the upstream repository license section.
-- Required action when distributing binaries that include the bundle: include the upstream MIT license/copyright notice and keep attribution in README/NOTICE.
+- Role: Windows Zapret bundle, strategies, lists, `winws.exe`, WinDivert files and
+  supporting utilities synchronized by the application.
+- License: MIT; see upstream `LICENSE.txt`.
+- Distribution note: preserve the upstream copyright and MIT permission notice.
 
-## tg-ws-proxy by Flowseal
-
-- Repository: https://github.com/Flowseal/tg-ws-proxy
-- Role: source of the local Telegram MTProto proxy engine. ZapretGUI embeds
-  the upstream `proxy/` and `utils/` Python modules verbatim under
-  `app/tg_proxy_engine/` and runs the engine as an asyncio task inside its
-  own process (no separate `TgWsProxy.exe` subprocess, no second tray icon).
-- License: MIT. The full license text and copyright notice are included at
-  `app/tg_proxy_engine/LICENSE`.
-- Required action when distributing binaries: keep the LICENSE file inside
-  `app/tg_proxy_engine/` and the attribution in README/NOTICE/this file.
-  The upstream tray-UI files (`windows.py`, `macos.py`, `linux.py`, `ui/`,
-  `utils/tray_common.py`, `utils/update_check.py`, `utils/win32_theme.py`)
-  are NOT included in this redistribution.
-
-## zapret by bol-van
+## bol-van / zapret
 
 - Repository: https://github.com/bol-van/zapret
-- Role: original DPI bypass project used by Flowseal's bundle.
-- License: MIT, according to `docs/LICENSE.txt` in the upstream repository.
-- Required action: preserve copyright and license notices.
+- Role: original DPI-circumvention project underlying the Windows bundle.
+- License: MIT; see upstream `docs/LICENSE.txt`.
+- Distribution note: preserve the upstream copyright and license notice.
+
+## Flowseal / tg-ws-proxy
+
+- Repository: https://github.com/Flowseal/tg-ws-proxy
+- Role: source of the embedded Telegram MTProto WebSocket proxy engine.
+- License: MIT.
+- Local copy: selected upstream `proxy/` and `utils/` modules are maintained under
+  `app/tg_proxy_engine/`; the full notice is stored in
+  `app/tg_proxy_engine/LICENSE`.
+- Distribution note: keep that LICENSE file inside packaged applications. The
+  upstream platform tray front ends are not redistributed here.
 
 ## WinDivert by basil00 / ReQrypt
 
 - Repository: https://github.com/basil00/WinDivert
 - Website: https://reqrypt.org/windivert.html
-- Role: Windows packet interception driver/library used by zapret/winws.
-- License: WinDivert documentation describes it as LGPL-3.0, and current project pages also mention dual LGPL/GPL choices depending on distribution.
-- Required action: include WinDivert license text/notices when shipping binaries that contain WinDivert files. Do not remove upstream license files from the downloaded bundle.
+- Role: Windows packet interception driver and library used by `winws.exe`.
+- License: GNU Lesser General Public License, version 3; consult the current
+  upstream `LICENSE` for the exact terms and any available licensing options.
+- Distribution note: retain the license and copyright notices shipped with the
+  WinDivert binaries and source bundle.
 
 ## PyQt6 by Riverbank Computing
 
 - Package: https://pypi.org/project/PyQt6/
-- Role: GUI toolkit bindings.
-- License: GPL-3.0 or commercial Riverbank license.
-- Project decision: this repository uses GPL-3.0 for compatibility with the GPL version of PyQt6. If you want a non-GPL/proprietary license, buy a commercial PyQt license or migrate to PySide6 and verify Qt licensing.
+- Role: Python bindings used for the graphical interface.
+- License: GPL-3.0 or a commercial Riverbank license.
+- Project choice: Zapret GUI is distributed as GPL-3.0-only while using the GPL
+  edition of PyQt6.
 
-## Other Python dependencies
+## Python runtime and build dependencies
 
-- `requests` — Apache-2.0
-- `cryptography` — Apache-2.0 or BSD-style dual license (used by the embedded
-  tg-ws-proxy engine for MTProto encryption)
-- `pywin32` — Python Software Foundation / BSD-style license
-- Transitive dependencies may include `urllib3`, `certifi`, `idna`, and `charset-normalizer`.
+| Package | Role | License summary |
+|---|---|---|
+| `requests` | HTTPS and API downloads | Apache-2.0 |
+| `cryptography` | MTProto cryptography | Apache-2.0 OR BSD-3-Clause |
+| `pywin32` | Windows APIs | PSF and BSD-style terms; see package notices |
+| `PyInstaller` | Release packaging | GPL-2.0-or-later with the upstream bootloader exception |
+| `pytest`, `pytest-qt`, `pyflakes` | Tests and static checks | Development-only; see each package metadata |
 
-When publishing releases, verify the exact wheel versions and include their
-license notices if they are bundled into the executable by PyInstaller.
+PyInstaller may bundle transitive packages such as `urllib3`, `certifi`, `idna`
+and `charset-normalizer`. Release maintainers must review the exact dependency
+set and preserve all notices required by the wheels included in the executable.
+
+## Maintainer checklist
+
+When an upstream component or pinned dependency changes:
+
+1. inspect the license in the exact downloaded tag or wheel;
+2. update this file if the attribution or terms changed;
+3. keep required license files in the installer;
+4. verify that GPL-compatible distribution remains possible.
