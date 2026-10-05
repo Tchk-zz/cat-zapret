@@ -13,7 +13,7 @@ requests>=2.31,<3
 # engine (app/tg_proxy_engine/_aes.py) for MTProto encryption. Removing it
 # breaks the Telegram proxy at runtime, so do not treat it as unused.
 # 44.0.0-49.0.0 are affected by CVE-2026-69247 (PKCS#7 oracle).
-cryptography>=50.0.0,<51
+cryptography>=50.0.2,<51
 
 # Not imported anywhere in the app (Windows APIs are called through the
 # standard-library ctypes and winreg instead). Kept because the Windows CI
