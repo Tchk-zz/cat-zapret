@@ -1,8 +1,8 @@
 # Exact top-level packages used for release builds.
 # Update deliberately after tests and an installer smoke test; do not silently
 # replace these versions during a release build.
-PyQt6==6.11.0
+PyQt6==6.12.0
 requests==2.34.2
-cryptography==50.0.1
+cryptography==50.0.2
 pywin32==312; platform_system == "Windows"
 pyinstaller==6.22.3
